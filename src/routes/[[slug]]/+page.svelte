@@ -1,4 +1,7 @@
 <script lang="ts">
+	import { replaceState } from '$app/navigation';
+	import { resolve } from '$app/paths';
+	import { page as routePage } from '$app/state';
 	import { tick } from 'svelte';
 
 	type FlipCorner = 'top' | 'bottom';
@@ -6,19 +9,20 @@
 
 	const contents = [
 		{ title: 'Sommaire', page: 1, note: 'Carte du livre-site' },
-		{ title: 'Manifeste', page: 2, note: 'Notre ligne éditoriale' },
-		{ title: 'Collections', page: 3, note: 'Les formats de publication' },
-		{ title: 'Catalogue', page: 4, note: 'Livres en vitrine' },
-		{ title: 'Auteurs', page: 5, note: 'Voix accompagnées' },
-		{ title: 'Manuscrits', page: 6, note: 'Soumettre un texte' },
-		{ title: 'Journal', page: 7, note: 'Parutions et rencontres' },
-		{ title: 'Contact', page: 8, note: 'Libraires, presse, droits' }
+		{ title: 'À propos', page: 2, note: 'Création et publication' },
+		{ title: 'Collections', page: 4, note: 'Les formats de publication' },
+		{ title: 'Catalogue', page: 5, note: 'Livres en vitrine' },
+		{ title: 'Auteurs', page: 6, note: 'Voix accompagnées' },
+		{ title: 'Manuscrits', page: 7, note: 'Soumettre un texte' },
+		{ title: 'Journal', page: 8, note: 'Parutions et rencontres' },
+		{ title: 'Contact', page: 9, note: 'Libraires, presse, droits' }
 	];
 
 	const pageNames = [
 		'Couverture',
 		'Sommaire',
-		'Manifeste',
+		'À propos',
+		'À propos',
 		'Collections',
 		'Catalogue',
 		'Auteurs',
@@ -26,6 +30,20 @@
 		'Journal',
 		'Contact',
 		'Dos'
+	];
+
+	const slugByPage = [
+		'',
+		'sommaire',
+		'a-propos',
+		'a-propos-suite',
+		'collections',
+		'catalogue',
+		'auteurs',
+		'manuscrits',
+		'journal',
+		'contact',
+		'dos'
 	];
 
 	const collections = [
@@ -48,21 +66,21 @@
 
 	const catalogue = [
 		{
-			title: 'Le Jardin des marges',
-			author: 'M. Sorel',
-			tag: 'Roman',
-			status: 'Automne'
+			title: 'Plume et ses compagnons',
+			author: 'Marc BAUDRILLARD',
+			tag: 'Livre pour enfants',
+			status: 'Déjà en librairie'
 		},
 		{
-			title: 'Nuit botanique',
-			author: 'Ana Vey',
-			tag: 'Poésie',
-			status: 'En lecture'
+			title: 'Nouvelles Augmentées',
+			author: 'Guillaume DARBONNE',
+			tag: 'Science-fiction',
+			status: 'Bientôt'
 		},
 		{
-			title: 'Lettres de serre',
-			author: 'Collectif',
-			tag: 'Correspondances',
+			title: 'Le vert',
+			author: 'Céline VASSEUR',
+			tag: 'Art et nature',
 			status: 'Bientôt'
 		}
 	];
@@ -74,12 +92,30 @@
 		'Coordonnées et bibliographie courte'
 	];
 
+	const aboutParagraphs = [
+		'A fleur de lignes est né d’une volonté simple : rendre la création et la publication d’un livre accessibles aux auteurs tout en conservant un niveau de qualité professionnel.',
+		"Depuis plusieurs années, j'accompagne des projets éditoriaux à travers la création de couvertures, la mise en page, la préparation des fichiers pour l’impression et la publication. À ce jour, j’ai participé à la réalisation d’une cinquantaine d’ouvrages en collaboration avec leurs auteurs ainsi qu’avec une maison d’édition indépendante.",
+		'Mon parcours m’a également permis de découvrir le livre sous un autre angle grâce à près de dix années d’expérience en librairie. Cette double approche me donne une vision globale de la chaîne du livre, de sa conception jusqu’à sa rencontre avec les lecteurs.'
+	];
+
+	const aboutMoreParagraphs = [
+		'Au fil des projets, j’ai constaté les difficultés rencontrées par de nombreux auteurs : manque de réponses des maisons d’édition, démarches techniques complexes, délais importants ou absence d’accompagnement personnalisé.',
+		'C’est pour répondre à ces besoins qu’est né A fleur de lignes.',
+		'J’accompagne aujourd’hui les auteurs et porteurs de projets à chaque étape de leur publication : mise en page, préparation des illustrations, création de couverture, contrôle des fichiers d’impression, création de livres numériques EPUB et publication sur les plateformes KDP et BoD.',
+		'Chaque projet est unique et bénéficie d’un suivi attentif, avec une approche à la fois humaine, rigoureuse et artisanale.',
+		'Parce qu’un livre ne se résume pas à un simple fichier, chaque projet mérite une attention particulière pour devenir un ouvrage dont son auteur peut être fier.'
+	];
+
+	const initialPage = pageIndexFromSlug(routePage.params.slug);
+
 	let bookElement = $state<HTMLDivElement | undefined>();
 	let pageFlip: PageFlip | null = null;
 	let isReady = $state(false);
-	let currentPage = $state(0);
+	let currentPage = $state(initialPage);
 	let totalPages = $state(pageNames.length);
 	let orientation = $state<'portrait' | 'landscape'>('landscape');
+	let initialSlugPage: number | null = initialPage > 0 ? initialPage : null;
+	let urlPageOverride: number | null = initialPage > 0 ? initialPage : null;
 
 	let currentLabel = $derived(pageNames[currentPage] ?? 'Page');
 	let progress = $derived(Math.max(0, Math.min(100, ((currentPage + 1) / totalPages) * 100)));
@@ -114,6 +150,7 @@
 				autoSize: true,
 				maxShadowOpacity: 0.32,
 				showCover: true,
+				startPage: initialPage,
 				mobileScrollSupport: true,
 				swipeDistance: 35,
 				clickEventForward: true,
@@ -128,11 +165,15 @@
 				orientation = data.mode ?? pageFlip?.getOrientation() ?? 'landscape';
 				totalPages = pageFlip?.getPageCount() ?? pages.length;
 				isReady = true;
+				replaceUrlForPage(currentPage);
 			});
 
 			pageFlip.on('flip', (event) => {
-				currentPage =
+				const flippedPage =
 					typeof event.data === 'number' ? event.data : (pageFlip?.getCurrentPageIndex() ?? 0);
+				currentPage = urlPageOverride ?? initialSlugPage ?? flippedPage;
+				replaceUrlForPage(currentPage);
+				urlPageOverride = null;
 			});
 
 			pageFlip.on('changeOrientation', (event) => {
@@ -156,20 +197,60 @@
 	function flipTo(page: number, corner: FlipCorner = 'bottom') {
 		if (!pageFlip || page === currentPage) return;
 
+		initialSlugPage = null;
+		urlPageOverride = page;
 		pageFlip.flip(page, corner);
 	}
 
+	function goHome() {
+		initialSlugPage = null;
+		urlPageOverride = 0;
+		replaceUrlForPage(0);
+
+		if (pageFlip && currentPage !== 0) {
+			pageFlip.flip(0, 'top');
+		}
+	}
+
+	function navigateInsidePage(event: MouseEvent, page: number, corner: FlipCorner = 'bottom') {
+		event.preventDefault();
+		event.stopPropagation();
+		flipTo(page, corner);
+	}
+
 	function nextPage() {
+		initialSlugPage = null;
 		pageFlip?.flipNext('bottom');
 	}
 
 	function previousPage() {
+		initialSlugPage = null;
 		pageFlip?.flipPrev('bottom');
 	}
 
 	function handleKeydown(event: KeyboardEvent) {
 		if (event.key === 'ArrowRight') nextPage();
 		if (event.key === 'ArrowLeft') previousPage();
+	}
+
+	function pageIndexFromSlug(slug: string | undefined) {
+		if (!slug) return 0;
+
+		const index = slugByPage.indexOf(slug);
+		return index >= 0 ? index : 0;
+	}
+
+	function pagePath(pageIndex: number) {
+		const slug = slugByPage[pageIndex] ?? '';
+		return slug ? `/${slug}` : '/';
+	}
+
+	function replaceUrlForPage(pageIndex: number) {
+		const path = pagePath(pageIndex);
+
+		if (routePage.url.pathname !== path) {
+			replaceState(resolve(path), routePage.state);
+		}
 	}
 </script>
 
@@ -185,9 +266,7 @@
 
 <main class="book-screen">
 	<header class="book-status" aria-label="Position dans le livre">
-		<button class="wordmark" type="button" onclick={() => flipTo(0, 'top')}
-			>À Fleur de Lignes</button
-		>
+		<button class="wordmark" type="button" onclick={goHome}>À Fleur de Lignes</button>
 		<div class="page-track" aria-hidden="true" style={`--progress: ${progress}%`}></div>
 		<span>{currentLabel}</span>
 	</header>
@@ -222,8 +301,10 @@
 						<div class="cover-meta">
 							<p>Maison d'édition indépendante</p>
 							<h1>Des textes à ouvrir comme des fleurs.</h1>
-							<button type="button" onclick={() => flipTo(1)} disabled={!isReady}
-								>Ouvrir le livre</button
+							<button
+								type="button"
+								onclick={(event) => navigateInsidePage(event, 1)}
+								disabled={!isReady}>Ouvrir le livre</button
 							>
 						</div>
 					</div>
@@ -237,7 +318,7 @@
 							{#each contents as entry (entry.title)}
 								<button
 									type="button"
-									onclick={() => flipTo(entry.page)}
+									onclick={(event) => navigateInsidePage(event, entry.page)}
 									aria-current={currentPage === entry.page ? 'page' : undefined}
 								>
 									<span>{entry.title}</span>
@@ -249,29 +330,45 @@
 					</div>
 				</article>
 
-				<article class="book-page manifesto-page" aria-label="Manifeste">
+				<article class="book-page manifesto-page" aria-label="À propos">
 					<div class="page-inner">
 						<p class="folio">3</p>
-						<p class="eyebrow">Manifeste</p>
-						<h2>Publier ce qui garde une trace de vivant.</h2>
-						<p class="lead">
-							À Fleur de Lignes défend des livres attentifs, précis, traversés par la langue et par
-							le regard. Chaque texte est travaillé comme un objet de lecture, de la première note
-							éditoriale au dernier détail de fabrication.
-						</p>
-						<div class="quote-block">
-							<span>“</span>
-							<p>Une maison pour les voix qui cherchent leur forme avant leur vitrine.</p>
+						<p class="eyebrow">À propos</p>
+						<h2>Créer des livres avec exigence et attention.</h2>
+						<div class="about-copy">
+							{#each aboutParagraphs as paragraph}
+								<p>{paragraph}</p>
+							{/each}
 						</div>
-						<button class="inline-link" type="button" onclick={() => flipTo(3)}
-							>Voir les collections</button
+						<button
+							class="inline-link"
+							type="button"
+							onclick={(event) => navigateInsidePage(event, 3)}>Lire la suite</button
+						>
+					</div>
+				</article>
+
+				<article class="book-page manifesto-page" aria-label="À propos, suite">
+					<div class="page-inner">
+						<p class="folio">4</p>
+						<p class="eyebrow">À propos</p>
+						<h2>Un accompagnement éditorial à chaque étape.</h2>
+						<div class="about-copy">
+							{#each aboutMoreParagraphs as paragraph}
+								<p>{paragraph}</p>
+							{/each}
+						</div>
+						<button
+							class="inline-link"
+							type="button"
+							onclick={(event) => navigateInsidePage(event, 4)}>Voir les collections</button
 						>
 					</div>
 				</article>
 
 				<article class="book-page collections-page" aria-label="Collections">
 					<div class="page-inner">
-						<p class="folio">4</p>
+						<p class="folio">5</p>
 						<p class="eyebrow">Collections</p>
 						<h2>Trois rayonnages, une même exigence.</h2>
 						<div class="collection-grid">
@@ -283,15 +380,17 @@
 								</section>
 							{/each}
 						</div>
-						<button class="inline-link" type="button" onclick={() => flipTo(4)}
-							>Feuilleter le catalogue</button
+						<button
+							class="inline-link"
+							type="button"
+							onclick={(event) => navigateInsidePage(event, 5)}>Feuilleter le catalogue</button
 						>
 					</div>
 				</article>
 
 				<article class="book-page catalogue-page" aria-label="Catalogue">
 					<div class="page-inner">
-						<p class="folio">5</p>
+						<p class="folio">6</p>
 						<p class="eyebrow">Catalogue</p>
 						<h2>Livres en préparation</h2>
 						<div class="shelf">
@@ -306,14 +405,16 @@
 						</div>
 						<div class="press-note">
 							<p>Service presse, librairies et droits étrangers sur demande.</p>
-							<button type="button" onclick={() => flipTo(8)}>Aller au contact</button>
+							<button type="button" onclick={(event) => navigateInsidePage(event, 9)}
+								>Aller au contact</button
+							>
 						</div>
 					</div>
 				</article>
 
 				<article class="book-page authors-page" aria-label="Auteurs">
 					<div class="page-inner">
-						<p class="folio">6</p>
+						<p class="folio">7</p>
 						<p class="eyebrow">Auteurs</p>
 						<h2>Accompagner une voix sans la lisser.</h2>
 						<div class="author-layout">
@@ -329,15 +430,17 @@
 								</p>
 							</div>
 						</div>
-						<button class="inline-link" type="button" onclick={() => flipTo(6)}
-							>Soumettre un manuscrit</button
+						<button
+							class="inline-link"
+							type="button"
+							onclick={(event) => navigateInsidePage(event, 7)}>Soumettre un manuscrit</button
 						>
 					</div>
 				</article>
 
 				<article class="book-page manuscript-page" aria-label="Manuscrits">
 					<div class="page-inner">
-						<p class="folio">7</p>
+						<p class="folio">8</p>
 						<p class="eyebrow">Manuscrits</p>
 						<h2>Ce que nous lisons en premier.</h2>
 						<ol class="manuscript-list">
@@ -349,15 +452,17 @@
 							Les envois rouvrent par sessions afin de lire chaque texte avec attention. Les projets
 							de roman, poésie, récit et essai littéraire sont les bienvenus.
 						</p>
-						<button class="inline-link" type="button" onclick={() => flipTo(8)}
-							>Préparer un envoi</button
+						<button
+							class="inline-link"
+							type="button"
+							onclick={(event) => navigateInsidePage(event, 9)}>Préparer un envoi</button
 						>
 					</div>
 				</article>
 
 				<article class="book-page journal-page" aria-label="Journal">
 					<div class="page-inner">
-						<p class="folio">8</p>
+						<p class="folio">9</p>
 						<p class="eyebrow">Journal</p>
 						<h2>Notes d'atelier</h2>
 						<div class="journal-stack">
@@ -379,7 +484,7 @@
 
 				<article class="book-page contact-page" aria-label="Contact">
 					<div class="page-inner">
-						<p class="folio">9</p>
+						<p class="folio">10</p>
 						<p class="eyebrow">Contact</p>
 						<h2>Adresse éditoriale</h2>
 						<div class="contact-grid">
@@ -396,8 +501,10 @@
 								presse@afleurdelignes.fr
 							</a>
 						</div>
-						<button class="inline-link" type="button" onclick={() => flipTo(0, 'top')}
-							>Retour couverture</button
+						<button
+							class="inline-link"
+							type="button"
+							onclick={(event) => navigateInsidePage(event, 0, 'top')}>Retour couverture</button
 						>
 					</div>
 				</article>
@@ -435,8 +542,8 @@
 
 	<footer class="book-controls">
 		<button type="button" onclick={() => flipTo(1)} disabled={!isReady}>Sommaire</button>
-		<button type="button" onclick={() => flipTo(4)} disabled={!isReady}>Catalogue</button>
-		<button type="button" onclick={() => flipTo(6)} disabled={!isReady}>Manuscrits</button>
+		<button type="button" onclick={() => flipTo(5)} disabled={!isReady}>Catalogue</button>
+		<button type="button" onclick={() => flipTo(7)} disabled={!isReady}>Manuscrits</button>
 		<span>{String(currentPage + 1).padStart(2, '0')} / {String(totalPages).padStart(2, '0')}</span>
 	</footer>
 </main>
@@ -641,6 +748,22 @@
 		display: block;
 	}
 
+	.cover-page .cover-border {
+		align-content: start;
+		gap: clamp(0.5rem, 1.4vw, 0.8rem);
+		padding-top: clamp(0.9rem, 2.4vw, 1.7rem);
+	}
+
+	.cover-page picture {
+		display: grid;
+		justify-items: center;
+		width: 100%;
+	}
+
+	.cover-page .cover-border img {
+		width: min(82%, 20rem);
+	}
+
 	.cover-meta {
 		display: grid;
 		gap: 0.8rem;
@@ -700,6 +823,11 @@
 		opacity: 0.45;
 	}
 
+	.book-page button > *,
+	.book-page a > * {
+		pointer-events: none;
+	}
+
 	.page-inner {
 		position: relative;
 		z-index: 1;
@@ -707,8 +835,7 @@
 		display: grid;
 		align-content: start;
 		gap: clamp(0.45rem, 1.15vw, 0.82rem);
-		padding: clamp(1rem, 3.2vw, 2.2rem) clamp(1rem, 3.2vw, 2.2rem)
-			clamp(2.3rem, 4vw, 3rem);
+		padding: clamp(1rem, 3.2vw, 2.2rem) clamp(1rem, 3.2vw, 2.2rem) clamp(2.3rem, 4vw, 3rem);
 	}
 
 	.folio {
@@ -780,24 +907,27 @@
 		color: var(--accent-strong);
 	}
 
-	.quote-block {
+	.manifesto-page .page-inner {
+		gap: clamp(0.52rem, 1vw, 0.78rem);
+	}
+
+	.manifesto-page h2 {
+		font-size: clamp(1.55rem, 2.75vw, 2.35rem);
+	}
+
+	.about-copy {
 		display: grid;
-		grid-template-columns: auto minmax(0, 1fr);
-		gap: 0.8rem;
-		padding-top: 1rem;
-		border-top: 1px solid var(--line);
-		color: var(--accent-strong);
+		gap: clamp(0.58rem, 1vw, 0.82rem);
 	}
 
-	.quote-block span {
-		font-size: clamp(2.6rem, 5vw, 3.6rem);
-		line-height: 0.8;
-	}
-
-	.quote-block p {
+	.about-copy p {
 		margin: 0;
-		font-size: clamp(0.92rem, 1.35vw, 1.05rem);
-		line-height: 1.35;
+		color: var(--paper-muted);
+		font-size: clamp(0.9rem, 1.28vw, 1.08rem);
+		line-height: 1.5;
+		text-align: justify;
+		text-align-last: left;
+		hyphens: auto;
 	}
 
 	.inline-link {
@@ -1053,6 +1183,27 @@
 
 		.initial {
 			width: 5.2rem;
+		}
+
+		.manifesto-page .page-inner {
+			gap: 0.45rem;
+		}
+
+		.manifesto-page h2 {
+			font-size: 1.28rem;
+		}
+
+		.about-copy {
+			gap: 0.4rem;
+		}
+
+		.about-copy p {
+			font-size: 0.82rem;
+			line-height: 1.34;
+		}
+
+		.manifesto-page .inline-link {
+			display: none;
 		}
 
 		.book-controls {

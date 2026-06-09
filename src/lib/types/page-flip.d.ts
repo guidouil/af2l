@@ -13,6 +13,7 @@ declare module 'page-flip/dist/js/page-flip.module.js' {
 		drawShadow?: boolean;
 		flippingTime?: number;
 		usePortrait?: boolean;
+		startPage?: number;
 		startZIndex?: number;
 		autoSize?: boolean;
 		maxShadowOpacity?: number;
