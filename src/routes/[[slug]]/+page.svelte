@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { browser } from '$app/environment';
 	import { replaceState } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page as routePage } from '$app/state';
@@ -10,12 +11,11 @@
 	const contents = [
 		{ title: 'Sommaire', page: 1, note: 'Carte du livre-site' },
 		{ title: 'À propos', page: 2, note: 'Création et publication' },
-		{ title: 'Collections', page: 4, note: 'Les formats de publication' },
-		{ title: 'Catalogue', page: 5, note: 'Livres en vitrine' },
-		{ title: 'Auteurs', page: 6, note: 'Voix accompagnées' },
-		{ title: 'Manuscrits', page: 7, note: 'Soumettre un texte' },
-		{ title: 'Journal', page: 8, note: 'Parutions et rencontres' },
-		{ title: 'Contact', page: 9, note: 'Libraires, presse, droits' }
+		{ title: 'Catalogue', page: 4, note: 'Livres en vitrine' },
+		{ title: 'Auteurs', page: 5, note: 'Voix accompagnées' },
+		{ title: 'Manuscrits', page: 6, note: 'Soumettre un texte' },
+		{ title: 'Tarifs', page: 7, note: 'Estimation personnalisée' },
+		{ title: 'Contact', page: 8, note: 'Libraires, presse, droits' }
 	];
 
 	const pageNames = [
@@ -23,11 +23,10 @@
 		'Sommaire',
 		'À propos',
 		'À propos',
-		'Collections',
 		'Catalogue',
 		'Auteurs',
 		'Manuscrits',
-		'Journal',
+		'Tarifs',
 		'Contact',
 		'Dos'
 	];
@@ -37,32 +36,232 @@
 		'sommaire',
 		'a-propos',
 		'a-propos-suite',
-		'collections',
 		'catalogue',
 		'auteurs',
 		'manuscrits',
-		'journal',
+		'tarifs',
 		'contact',
 		'dos'
 	];
 
-	const collections = [
-		{
-			kicker: '01',
-			title: 'Premières Lignes',
-			text: 'Romans courts, récits intimes et textes qui gardent le frisson de leur première phrase.'
-		},
-		{
-			kicker: '02',
-			title: 'Herbier Noir',
-			text: 'Poésie, fragments et formes hybrides pour les voix qui déplacent le papier.'
-		},
-		{
-			kicker: '03',
-			title: 'Marge Claire',
-			text: 'Essais littéraires, correspondances et carnets de création.'
-		}
+	type ProjectType = 'paper' | 'epub' | 'paper-epub';
+	type BookCategory = 'fiction' | 'essay' | 'illustrated' | 'youth' | 'poetry' | 'art-book';
+	type CoverOption = 'ready-pdf' | 'supplied-illustration' | 'full-creation';
+	type PublicationOption = 'kdp' | 'bod' | 'kdp-bod' | 'none';
+	type VolumeInput = 'pages' | 'signs';
+	type PricingState = {
+		projectType: ProjectType;
+		bookCategory: BookCategory;
+		volumeInput: VolumeInput;
+		pageCount: number;
+		signCount: number;
+		illustrationCount: number;
+		wantsCorrection: boolean;
+		coverOption: CoverOption;
+		hasFootnotes: boolean;
+		hasIndex: boolean;
+		hasComplexIndex: boolean;
+		hasSummary: boolean;
+		tableCount: number;
+		publicationOption: PublicationOption;
+	};
+
+	const projectTypes: { value: ProjectType; label: string }[] = [
+		{ value: 'paper', label: 'Livre papier' },
+		{ value: 'epub', label: 'Livre numérique (ePub)' },
+		{ value: 'paper-epub', label: 'Livre papier + numérique' }
 	];
+
+	const bookCategories: { value: BookCategory; label: string }[] = [
+		{ value: 'fiction', label: 'Roman / Nouvelle' },
+		{ value: 'essay', label: 'Essai / Document' },
+		{ value: 'illustrated', label: 'Livre illustré' },
+		{ value: 'youth', label: 'Livre jeunesse' },
+		{ value: 'poetry', label: 'Recueil de poésie' },
+		{ value: 'art-book', label: "Beau livre / Livre d'art" }
+	];
+
+	const coverOptions: { value: CoverOption; label: string; price: number }[] = [
+		{ value: 'ready-pdf', label: 'PDF complet prêt pour impression', price: 0 },
+		{ value: 'supplied-illustration', label: 'Illustration fournie', price: 120 },
+		{ value: 'full-creation', label: 'Création complète', price: 180 }
+	];
+
+	const publicationOptions: { value: PublicationOption; label: string; price: number }[] = [
+		{ value: 'kdp', label: 'KDP', price: 50 },
+		{ value: 'bod', label: 'BoD', price: 99 },
+		{ value: 'kdp-bod', label: 'KDP + BoD', price: 149 },
+		{ value: 'none', label: 'Pas de publication', price: 0 }
+	];
+
+	const euroFormatter = new Intl.NumberFormat('fr-FR', {
+		style: 'currency',
+		currency: 'EUR',
+		maximumFractionDigits: 0
+	});
+	const pricingStorageKey = 'afleurdelignes-pricing-configurator';
+
+	let projectType = $state<ProjectType>('paper');
+	let bookCategory = $state<BookCategory>('fiction');
+	let volumeInput = $state<VolumeInput>('pages');
+	let pageCount = $state(120);
+	let signCount = $state(180000);
+	let illustrationCount = $state(0);
+	let wantsCorrection = $state(true);
+	let coverOption = $state<CoverOption>('supplied-illustration');
+	let hasFootnotes = $state(false);
+	let hasIndex = $state(false);
+	let hasComplexIndex = $state(false);
+	let hasSummary = $state(true);
+	let tableCount = $state(0);
+	let publicationOption = $state<PublicationOption>('none');
+	let hasLoadedPricingState = $state(false);
+
+	let estimatedPages = $derived(
+		Math.max(0, Math.ceil(volumeInput === 'signs' ? signCount / 1500 : pageCount))
+	);
+	let layoutPrice = $derived(Math.max(90, estimatedPages * 1.5));
+	let correctionPrice = $derived(wantsCorrection ? estimatedPages * 1.25 : 0);
+	let illustrationsPrice = $derived(Math.max(0, illustrationCount) * 10);
+	let tablesPrice = $derived(Math.max(0, tableCount) * 5);
+	let footnotesPrice = $derived(hasFootnotes ? 50 : 0);
+	let indexPrice = $derived(
+		hasIndex ? (estimatedPages <= 100 ? 80 : estimatedPages <= 200 ? 120 : 180) : 0
+	);
+	let coverPrice = $derived(coverOptions.find((option) => option.value === coverOption)?.price ?? 0);
+	let epubPrice = $derived(projectType === 'epub' || projectType === 'paper-epub' ? 75 : 0);
+	let epubCoverAdaptationPrice = $derived(
+		projectType === 'paper-epub' && coverOption !== 'ready-pdf' ? 30 : 0
+	);
+	let publicationPrice = $derived(
+		publicationOptions.find((option) => option.value === publicationOption)?.price ?? 0
+	);
+	let requiresQuote = $derived(bookCategory === 'art-book' || (hasIndex && hasComplexIndex));
+	let totalEstimate = $derived(
+		layoutPrice +
+			correctionPrice +
+			illustrationsPrice +
+			tablesPrice +
+			footnotesPrice +
+			indexPrice +
+			coverPrice +
+			epubPrice +
+			epubCoverAdaptationPrice +
+			publicationPrice
+	);
+
+	function formatEuro(amount: number) {
+		return euroFormatter.format(amount);
+	}
+
+	$effect(() => {
+		if (!browser) return;
+
+		const rawState = localStorage.getItem(pricingStorageKey);
+
+		if (rawState) {
+			try {
+				restorePricingState(JSON.parse(rawState) as Partial<PricingState>);
+			} catch {
+				localStorage.removeItem(pricingStorageKey);
+			}
+		}
+
+		hasLoadedPricingState = true;
+	});
+
+	$effect(() => {
+		const state = {
+			projectType,
+			bookCategory,
+			volumeInput,
+			pageCount,
+			signCount,
+			illustrationCount,
+			wantsCorrection,
+			coverOption,
+			hasFootnotes,
+			hasIndex,
+			hasComplexIndex,
+			hasSummary,
+			tableCount,
+			publicationOption
+		};
+
+		if (!browser || !hasLoadedPricingState) return;
+
+		localStorage.setItem(pricingStorageKey, JSON.stringify(state));
+	});
+
+	function restorePricingState(state: Partial<PricingState>) {
+		if (isProjectType(state.projectType)) projectType = state.projectType;
+		if (isBookCategory(state.bookCategory)) bookCategory = state.bookCategory;
+		if (isVolumeInput(state.volumeInput)) volumeInput = state.volumeInput;
+		if (typeof state.pageCount === 'number') pageCount = state.pageCount;
+		if (typeof state.signCount === 'number') signCount = state.signCount;
+		if (typeof state.illustrationCount === 'number') illustrationCount = state.illustrationCount;
+		if (typeof state.wantsCorrection === 'boolean') wantsCorrection = state.wantsCorrection;
+		if (isCoverOption(state.coverOption)) coverOption = state.coverOption;
+		if (typeof state.hasFootnotes === 'boolean') hasFootnotes = state.hasFootnotes;
+		if (typeof state.hasIndex === 'boolean') hasIndex = state.hasIndex;
+		if (typeof state.hasComplexIndex === 'boolean') hasComplexIndex = state.hasComplexIndex;
+		if (typeof state.hasSummary === 'boolean') hasSummary = state.hasSummary;
+		if (typeof state.tableCount === 'number') tableCount = state.tableCount;
+		if (isPublicationOption(state.publicationOption)) publicationOption = state.publicationOption;
+	}
+
+	function isProjectType(value: unknown): value is ProjectType {
+		return projectTypes.some((option) => option.value === value);
+	}
+
+	function isBookCategory(value: unknown): value is BookCategory {
+		return bookCategories.some((option) => option.value === value);
+	}
+
+	function isCoverOption(value: unknown): value is CoverOption {
+		return coverOptions.some((option) => option.value === value);
+	}
+
+	function isPublicationOption(value: unknown): value is PublicationOption {
+		return publicationOptions.some((option) => option.value === value);
+	}
+
+	function isVolumeInput(value: unknown): value is VolumeInput {
+		return value === 'pages' || value === 'signs';
+	}
+
+	function stopPricingEvent(event: Event) {
+		event.stopPropagation();
+	}
+
+	function containPricingInteraction(node: HTMLElement) {
+		const options = { capture: true };
+		const eventNames = [
+			'click',
+			'dblclick',
+			'mousedown',
+			'mouseup',
+			'pointerdown',
+			'pointerup',
+			'touchstart',
+			'touchend',
+			'keydown',
+			'keyup',
+			'wheel'
+		];
+
+		for (const eventName of eventNames) {
+			node.addEventListener(eventName, stopPricingEvent, options);
+		}
+
+		return {
+			destroy() {
+				for (const eventName of eventNames) {
+					node.removeEventListener(eventName, stopPricingEvent, options);
+				}
+			}
+		};
+	}
 
 	const catalogue = [
 		{
@@ -153,7 +352,7 @@
 				startPage: initialPage,
 				mobileScrollSupport: true,
 				swipeDistance: 35,
-				clickEventForward: true,
+				clickEventForward: false,
 				useMouseEvents: true,
 				showPageCorners: true
 			});
@@ -336,7 +535,7 @@
 						<p class="eyebrow">À propos</p>
 						<h2>Créer des livres avec exigence et attention.</h2>
 						<div class="about-copy">
-							{#each aboutParagraphs as paragraph}
+							{#each aboutParagraphs as paragraph (paragraph)}
 								<p>{paragraph}</p>
 							{/each}
 						</div>
@@ -354,43 +553,21 @@
 						<p class="eyebrow">À propos</p>
 						<h2>Un accompagnement éditorial à chaque étape.</h2>
 						<div class="about-copy">
-							{#each aboutMoreParagraphs as paragraph}
+							{#each aboutMoreParagraphs as paragraph (paragraph)}
 								<p>{paragraph}</p>
 							{/each}
 						</div>
 						<button
 							class="inline-link"
 							type="button"
-							onclick={(event) => navigateInsidePage(event, 4)}>Voir les collections</button
-						>
-					</div>
-				</article>
-
-				<article class="book-page collections-page" aria-label="Collections">
-					<div class="page-inner">
-						<p class="folio">5</p>
-						<p class="eyebrow">Collections</p>
-						<h2>Trois rayonnages, une même exigence.</h2>
-						<div class="collection-grid">
-							{#each collections as item (item.title)}
-								<section>
-									<small>{item.kicker}</small>
-									<h3>{item.title}</h3>
-									<p>{item.text}</p>
-								</section>
-							{/each}
-						</div>
-						<button
-							class="inline-link"
-							type="button"
-							onclick={(event) => navigateInsidePage(event, 5)}>Feuilleter le catalogue</button
+							onclick={(event) => navigateInsidePage(event, 4)}>Feuilleter le catalogue</button
 						>
 					</div>
 				</article>
 
 				<article class="book-page catalogue-page" aria-label="Catalogue">
 					<div class="page-inner">
-						<p class="folio">6</p>
+						<p class="folio">5</p>
 						<p class="eyebrow">Catalogue</p>
 						<h2>Livres en préparation</h2>
 						<div class="shelf">
@@ -405,7 +582,7 @@
 						</div>
 						<div class="press-note">
 							<p>Service presse, librairies et droits étrangers sur demande.</p>
-							<button type="button" onclick={(event) => navigateInsidePage(event, 9)}
+							<button type="button" onclick={(event) => navigateInsidePage(event, 8)}
 								>Aller au contact</button
 							>
 						</div>
@@ -414,7 +591,7 @@
 
 				<article class="book-page authors-page" aria-label="Auteurs">
 					<div class="page-inner">
-						<p class="folio">7</p>
+						<p class="folio">6</p>
 						<p class="eyebrow">Auteurs</p>
 						<h2>Accompagner une voix sans la lisser.</h2>
 						<div class="author-layout">
@@ -433,14 +610,14 @@
 						<button
 							class="inline-link"
 							type="button"
-							onclick={(event) => navigateInsidePage(event, 7)}>Soumettre un manuscrit</button
+							onclick={(event) => navigateInsidePage(event, 6)}>Soumettre un manuscrit</button
 						>
 					</div>
 				</article>
 
 				<article class="book-page manuscript-page" aria-label="Manuscrits">
 					<div class="page-inner">
-						<p class="folio">8</p>
+						<p class="folio">7</p>
 						<p class="eyebrow">Manuscrits</p>
 						<h2>Ce que nous lisons en premier.</h2>
 						<ol class="manuscript-list">
@@ -455,36 +632,147 @@
 						<button
 							class="inline-link"
 							type="button"
-							onclick={(event) => navigateInsidePage(event, 9)}>Préparer un envoi</button
+							onclick={(event) => navigateInsidePage(event, 7)}>Estimer un projet</button
 						>
 					</div>
 				</article>
 
-				<article class="book-page journal-page" aria-label="Journal">
-					<div class="page-inner">
-						<p class="folio">9</p>
-						<p class="eyebrow">Journal</p>
-						<h2>Notes d'atelier</h2>
-						<div class="journal-stack">
-							<section>
-								<time datetime="2026-09">Septembre 2026</time>
-								<h3>Ouverture de la première saison de manuscrits</h3>
-							</section>
-							<section>
-								<time datetime="2026-10">Octobre 2026</time>
-								<h3>Rencontre libraires autour des maquettes</h3>
-							</section>
-							<section>
-								<time datetime="2026-11">Novembre 2026</time>
-								<h3>Annonce de la collection inaugurale</h3>
-							</section>
+				<article
+					class="book-page pricing-page"
+					aria-label="Tarifs"
+					use:containPricingInteraction
+				>
+					<div class="page-inner pricing-inner">
+						<p class="folio">8</p>
+						<p class="eyebrow">Tarifs</p>
+						<div class="pricing-header">
+							<div>
+								<h2>Configurateur auteur</h2>
+								<p class="lead">
+									Sélectionnez les prestations dont vous avez besoin. Le calcul donne une
+									estimation personnalisée, sans engagement.
+								</p>
+							</div>
+							<aside class="estimate-box" aria-live="polite">
+								<span>{requiresQuote ? 'Sur devis' : 'Estimation'}</span>
+								<strong>{requiresQuote ? 'À préciser' : formatEuro(totalEstimate)}</strong>
+								<small>{estimatedPages} page{estimatedPages > 1 ? 's' : ''} A4 estimée{estimatedPages > 1 ? 's' : ''}</small>
+							</aside>
 						</div>
-					</div>
-				</article>
+
+							<form
+								class="pricing-scroll"
+								use:containPricingInteraction
+								onsubmit={(event) => event.preventDefault()}
+							>
+							<section class="pricing-group">
+								<h3>Projet</h3>
+								<div class="option-grid">
+									{#each projectTypes as option (option.value)}
+										<label>
+											<input type="radio" bind:group={projectType} value={option.value} />
+											<span>{option.label}</span>
+										</label>
+									{/each}
+								</div>
+							</section>
+
+							<section class="pricing-group">
+								<h3>Catégorie</h3>
+								<select bind:value={bookCategory}>
+									{#each bookCategories as option (option.value)}
+										<option value={option.value}>{option.label}</option>
+									{/each}
+								</select>
+							</section>
+
+							<section class="pricing-group">
+								<h3>Volume</h3>
+								<div class="volume-grid">
+									<label>
+										<span>Base</span>
+										<select bind:value={volumeInput}>
+											<option value="pages">Pages A4</option>
+											<option value="signs">Signes espaces comprises</option>
+										</select>
+									</label>
+									{#if volumeInput === 'pages'}
+										<label>
+											<span>Pages A4</span>
+											<input type="number" min="0" step="1" bind:value={pageCount} />
+										</label>
+									{:else}
+										<label>
+											<span>Signes</span>
+											<input type="number" min="0" step="1000" bind:value={signCount} />
+										</label>
+									{/if}
+								</div>
+							</section>
+
+							<section class="pricing-group">
+								<h3>Prestations</h3>
+								<div class="toggle-grid">
+									<label><input type="checkbox" bind:checked={wantsCorrection} /> Correction</label>
+									<label><input type="checkbox" bind:checked={hasFootnotes} /> Notes de bas de page</label>
+									<label><input type="checkbox" bind:checked={hasIndex} /> Index</label>
+									<label><input type="checkbox" bind:checked={hasSummary} /> Sommaire inclus</label>
+									{#if hasIndex}
+										<label><input type="checkbox" bind:checked={hasComplexIndex} /> Index complexe</label>
+									{/if}
+								</div>
+							</section>
+
+							<section class="pricing-group compact-fields">
+								<label>
+									<span>Illustrations</span>
+									<input type="number" min="0" step="1" bind:value={illustrationCount} />
+								</label>
+								<label>
+									<span>Tableaux</span>
+									<input type="number" min="0" step="1" bind:value={tableCount} />
+								</label>
+							</section>
+
+							<section class="pricing-group">
+								<h3>Couverture</h3>
+								<select bind:value={coverOption}>
+									{#each coverOptions as option (option.value)}
+										<option value={option.value}>{option.label}</option>
+									{/each}
+								</select>
+							</section>
+
+							<section class="pricing-group">
+								<h3>Publication</h3>
+								<select bind:value={publicationOption}>
+									{#each publicationOptions as option (option.value)}
+										<option value={option.value}>{option.label}</option>
+									{/each}
+								</select>
+							</section>
+
+							<section class="pricing-group breakdown">
+								<h3>Détail</h3>
+								<dl>
+									<div><dt>Mise en page</dt><dd>{formatEuro(layoutPrice)}</dd></div>
+									<div><dt>Correction</dt><dd>{formatEuro(correctionPrice)}</dd></div>
+									<div><dt>Illustrations</dt><dd>{formatEuro(illustrationsPrice)}</dd></div>
+									<div><dt>Tableaux</dt><dd>{formatEuro(tablesPrice)}</dd></div>
+									<div><dt>Notes</dt><dd>{formatEuro(footnotesPrice)}</dd></div>
+									<div><dt>Index</dt><dd>{formatEuro(indexPrice)}</dd></div>
+									<div><dt>Couverture</dt><dd>{formatEuro(coverPrice)}</dd></div>
+									<div><dt>ePub</dt><dd>{formatEuro(epubPrice + epubCoverAdaptationPrice)}</dd></div>
+									<div><dt>Publication</dt><dd>{formatEuro(publicationPrice)}</dd></div>
+								</dl>
+							</section>
+							</form>
+						</div>
+					</article>
 
 				<article class="book-page contact-page" aria-label="Contact">
 					<div class="page-inner">
-						<p class="folio">10</p>
+						<p class="folio">9</p>
 						<p class="eyebrow">Contact</p>
 						<h2>Adresse éditoriale</h2>
 						<div class="contact-grid">
@@ -542,8 +830,8 @@
 
 	<footer class="book-controls">
 		<button type="button" onclick={() => flipTo(1)} disabled={!isReady}>Sommaire</button>
-		<button type="button" onclick={() => flipTo(5)} disabled={!isReady}>Catalogue</button>
-		<button type="button" onclick={() => flipTo(7)} disabled={!isReady}>Manuscrits</button>
+		<button type="button" onclick={() => flipTo(4)} disabled={!isReady}>Catalogue</button>
+		<button type="button" onclick={() => flipTo(7)} disabled={!isReady}>Tarifs</button>
 		<span>{String(currentPage + 1).padStart(2, '0')} / {String(totalPages).padStart(2, '0')}</span>
 	</footer>
 </main>
@@ -776,7 +1064,10 @@
 	.folio,
 	.catalogue-card p,
 	.contact-grid span,
-	.journal-stack time {
+	.estimate-box span,
+	.estimate-box small,
+	.pricing-group h3,
+	.pricing-group label > span {
 		margin: 0;
 		font-family: ui-sans-serif, system-ui, sans-serif;
 		text-transform: uppercase;
@@ -936,42 +1227,31 @@
 		color: var(--paper-ink);
 	}
 
-	.collection-grid,
 	.shelf,
 	.contact-grid,
-	.journal-stack {
+	.pricing-scroll,
+	.pricing-group,
+	.breakdown dl {
 		display: grid;
 		gap: clamp(0.48rem, 1vw, 0.72rem);
 	}
 
-	.collection-grid section,
 	.catalogue-card,
-	.journal-stack section,
 	.contact-grid a,
-	.press-note {
+	.press-note,
+	.estimate-box,
+	.pricing-group {
 		border: 1px solid var(--line);
 		background: color-mix(in srgb, var(--paper) 76%, var(--paper-deep));
 	}
 
-	.collection-grid section {
-		padding: clamp(0.62rem, 1.4vw, 0.85rem);
-	}
-
-	.collection-grid small {
-		color: var(--gold);
-		font-family: ui-sans-serif, system-ui, sans-serif;
-	}
-
-	.collection-grid h3,
-	.catalogue-card h3,
-	.journal-stack h3 {
+	.catalogue-card h3 {
 		margin: 0.12rem 0;
 		font-size: clamp(1.05rem, 1.55vw, 1.28rem);
 		line-height: 1.1;
 		font-weight: 500;
 	}
 
-	.collection-grid p,
 	.catalogue-card span,
 	.press-note p,
 	.author-layout p,
@@ -1049,10 +1329,6 @@
 		color: var(--accent-strong);
 	}
 
-	.journal-stack section {
-		padding: clamp(0.85rem, 2vw, 1.1rem);
-	}
-
 	.contact-grid a {
 		display: grid;
 		gap: 0.3rem;
@@ -1060,6 +1336,183 @@
 		color: var(--paper-ink);
 		text-decoration: none;
 		overflow-wrap: anywhere;
+	}
+
+	.pricing-inner {
+		grid-template-rows: auto auto minmax(0, 1fr);
+		padding-bottom: clamp(1.35rem, 3vw, 2.2rem);
+		gap: 0.42rem;
+	}
+
+	.pricing-header {
+		display: grid;
+		grid-template-columns: 1fr;
+		gap: 0.42rem;
+		align-items: stretch;
+	}
+
+	.pricing-header h2 {
+		font-size: clamp(1.12rem, 1.9vw, 1.55rem);
+		line-height: 1;
+	}
+
+	.pricing-header .lead {
+		margin-top: 0.26rem;
+		font-size: clamp(0.7rem, 0.9vw, 0.78rem);
+		line-height: 1.25;
+	}
+
+	.estimate-box {
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: 0.45rem;
+		padding: 0.5rem 0.62rem;
+		border-left: 0.34rem solid var(--accent-strong);
+	}
+
+	.estimate-box strong {
+		font-size: clamp(1.12rem, 2vw, 1.45rem);
+		line-height: 1;
+		font-weight: 500;
+		color: var(--accent-strong);
+	}
+
+	.estimate-box small {
+		margin-left: auto;
+		text-transform: none;
+		line-height: 1.2;
+		text-align: right;
+	}
+
+	.pricing-scroll {
+		min-height: 0;
+		overflow: auto;
+		padding-right: 0.28rem;
+		scrollbar-width: thin;
+	}
+
+	.pricing-group {
+		padding: clamp(0.56rem, 1.2vw, 0.76rem);
+	}
+
+	.pricing-group h3 {
+		font-weight: 700;
+		color: var(--paper-ink);
+	}
+
+	.option-grid,
+	.toggle-grid,
+	.volume-grid,
+	.compact-fields {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 0.48rem;
+	}
+
+	.option-grid label,
+	.toggle-grid label,
+	.volume-grid label,
+	.compact-fields label {
+		display: flex;
+		align-items: center;
+		gap: 0.45rem;
+		min-height: 2.25rem;
+		color: var(--paper-ink);
+		font-family: ui-sans-serif, system-ui, sans-serif;
+		font-size: clamp(0.72rem, 1vw, 0.84rem);
+		line-height: 1.18;
+	}
+
+	.volume-grid label,
+	.compact-fields label {
+		display: grid;
+		align-items: start;
+	}
+
+	.pricing-group input,
+	.pricing-group select {
+		width: 100%;
+		min-height: 2.25rem;
+		border: 1px solid var(--line);
+		border-radius: 0;
+		background: var(--paper);
+		color: var(--paper-ink);
+		font-family: ui-sans-serif, system-ui, sans-serif;
+		font-size: 0.86rem;
+	}
+
+	.pricing-group input[type='radio'],
+	.pricing-group input[type='checkbox'] {
+		position: relative;
+		width: 1.05rem;
+		height: 1.05rem;
+		min-height: 1.05rem;
+		flex: 0 0 auto;
+		appearance: none;
+		border: 1.5px solid color-mix(in srgb, var(--paper-ink) 58%, transparent);
+		background: color-mix(in srgb, var(--paper) 88%, white);
+		box-shadow: inset 0 0 0 2px var(--paper);
+		cursor: pointer;
+	}
+
+	.pricing-group input[type='radio'] {
+		border-radius: 50%;
+	}
+
+	.pricing-group input[type='checkbox']:checked,
+	.pricing-group input[type='radio']:checked {
+		border-color: var(--accent-strong);
+		background: var(--accent-strong);
+	}
+
+	.pricing-group input[type='checkbox']:checked::after {
+		content: '';
+		position: absolute;
+		left: 0.3rem;
+		top: 0.12rem;
+		width: 0.35rem;
+		height: 0.62rem;
+		border: solid var(--paper);
+		border-width: 0 0.13rem 0.13rem 0;
+		transform: rotate(45deg);
+	}
+
+	.pricing-group input[type='radio']:checked::after {
+		content: '';
+		position: absolute;
+		inset: 0.27rem;
+		border-radius: 50%;
+		background: var(--paper);
+	}
+
+	.pricing-group input[type='checkbox']:focus-visible,
+	.pricing-group input[type='radio']:focus-visible {
+		outline: 2px solid var(--gold);
+		outline-offset: 2px;
+	}
+
+	.breakdown dl {
+		margin: 0;
+	}
+
+	.breakdown div {
+		display: flex;
+		justify-content: space-between;
+		gap: 0.8rem;
+		border-bottom: 1px solid color-mix(in srgb, var(--line) 72%, transparent);
+		font-family: ui-sans-serif, system-ui, sans-serif;
+		font-size: clamp(0.72rem, 1vw, 0.84rem);
+	}
+
+	.breakdown dt,
+	.breakdown dd {
+		margin: 0;
+	}
+
+	.breakdown dd {
+		color: var(--accent-strong);
+		font-weight: 700;
 	}
 
 	.back-cover .cover-border {
