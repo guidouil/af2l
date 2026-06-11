@@ -28,7 +28,7 @@
 		if (type === 'catalogueCards') return { id, type, title: 'Catalogue', cards: [] };
 		if (type === 'contactLinks') return { id, type, title: 'Contacts', links: [] };
 		if (type === 'pricingConfigurator')
-			return { id, type, title: 'Configurateur auteur', lead: '' };
+			return { id, type, title: 'Configurateur de prix', lead: '' };
 		if (type === 'image') return { id, type, alt: '', caption: '' };
 		return { id, type, label: 'Lire la suite', targetSlug: '' };
 	}

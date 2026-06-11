@@ -1,9 +1,8 @@
 <script lang="ts">
 	import { browser } from '$app/environment';
-	import { replaceState } from '$app/navigation';
+	import { beforeNavigate } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import { page as routePage } from '$app/state';
-	import { tick, untrack } from 'svelte';
+	import { untrack } from 'svelte';
 	import type { PageProps } from './$types';
 	import type { PageBlock, PublishedPage } from '$lib/content/types';
 	import { calculatePricing } from '$lib/pricing/engine';
@@ -16,9 +15,6 @@
 		VolumeInput
 	} from '$lib/pricing/types';
 
-	type FlipCorner = 'top' | 'bottom';
-	type PageFlip = import('page-flip/dist/js/page-flip.module.js').PageFlip;
-
 	let { data }: PageProps = $props();
 
 	const euroFormatter = new Intl.NumberFormat('fr-FR', {
@@ -27,17 +23,10 @@
 		maximumFractionDigits: 0
 	});
 	const pricingStorageKey = 'afleurdelignes-pricing-configurator';
-	const initialPage = untrack(() => data.initialPage);
+	const editorialHighlights = ['Mise en page', 'Couverture', 'EPUB', 'Publication', 'Suivi auteur'];
 
-	let bookElement = $state<HTMLDivElement | undefined>();
-	let pageFlip: PageFlip | null = null;
-	let isReady = $state(false);
-	let currentPage = $state(initialPage);
-	let totalPages = $state(untrack(() => data.book.pages.length));
-	let orientation = $state<'portrait' | 'landscape'>('landscape');
-	let initialSlugPage: number | null = initialPage > 0 ? initialPage : null;
-	let urlPageOverride: number | null = initialPage > 0 ? initialPage : null;
-
+	let navIsOpen = $state(false);
+	let turnDirection = $state<'forward' | 'back'>('forward');
 	let projectType = $state<ProjectType>(untrack(() => data.pricing.defaults.projectType));
 	let bookCategory = $state<BookCategory>(untrack(() => data.pricing.defaults.bookCategory));
 	let volumeInput = $state<VolumeInput>(untrack(() => data.pricing.defaults.volumeInput));
@@ -57,18 +46,17 @@
 	let hasLoadedPricingState = $state(false);
 
 	let pages = $derived(data.book.pages);
-	let contents = $derived(
-		pages
-			.map((page, index) => ({ page, index }))
-			.filter((entry) => entry.page.showInNav)
-			.map((entry) => ({
-				title: entry.page.navLabel,
-				page: entry.index,
-				note: entry.page.navNote
-			}))
+	let activePage = $derived(pages[data.initialPage] ?? pages[0]);
+	let activeSlug = $derived(activePage?.slug ?? '');
+	let navPages = $derived(
+		pages.filter((page) => page.showInNav && page.kind !== 'back_cover' && page.slug !== 'sommaire')
 	);
-	let currentLabel = $derived(pages[currentPage]?.navLabel ?? 'Page');
-	let progress = $derived(Math.max(0, Math.min(100, ((currentPage + 1) / totalPages) * 100)));
+	let submissionPage = $derived(
+		pages.find((page) => page.slug === 'soumission') ??
+			pages.find((page) => page.slug === 'manuscrits') ??
+			navPages.find((page) => page.navLabel.toLowerCase().includes('soumission')) ??
+			navPages[0]
+	);
 	let pricingInput = $derived<PricingInput>({
 		projectType,
 		bookCategory,
@@ -86,6 +74,15 @@
 		publicationOption
 	});
 	let pricingResult = $derived(calculatePricing(data.pricing, pricingInput));
+
+	if (browser) {
+		beforeNavigate((navigation) => {
+			if (navigation.to?.route.id !== '/[[slug]]') return;
+			const fromOrder = pageOrderFromPath(navigation.from?.url.pathname ?? '/');
+			const toOrder = pageOrderFromPath(navigation.to.url.pathname);
+			turnDirection = toOrder < fromOrder ? 'back' : 'forward';
+		});
+	}
 
 	$effect(() => {
 		if (!browser) return;
@@ -106,78 +103,6 @@
 	$effect(() => {
 		if (!browser || !hasLoadedPricingState) return;
 		localStorage.setItem(pricingStorageKey, JSON.stringify(pricingInput));
-	});
-
-	$effect(() => {
-		const element = bookElement;
-		if (!element) return;
-
-		let cancelled = false;
-
-		async function setupFlipbook(target: HTMLDivElement) {
-			await tick();
-
-			const { PageFlip } = await import('page-flip/dist/js/page-flip.module.js');
-			if (cancelled) return;
-
-			const htmlPages = target.querySelectorAll<HTMLElement>('.book-page');
-			pageFlip = new PageFlip(target, {
-				width: 620,
-				height: 860,
-				size: 'stretch',
-				minWidth: 280,
-				maxWidth: 680,
-				minHeight: 390,
-				maxHeight: 940,
-				drawShadow: true,
-				flippingTime: 950,
-				usePortrait: true,
-				startZIndex: 1,
-				autoSize: true,
-				maxShadowOpacity: 0.32,
-				showCover: true,
-				startPage: initialPage,
-				mobileScrollSupport: true,
-				swipeDistance: 35,
-				clickEventForward: false,
-				useMouseEvents: true,
-				showPageCorners: true
-			});
-
-			pageFlip.on('init', (event) => {
-				const eventData = event.data as { page?: number; mode?: 'portrait' | 'landscape' };
-				currentPage =
-					typeof eventData.page === 'number'
-						? eventData.page
-						: (pageFlip?.getCurrentPageIndex() ?? 0);
-				orientation = eventData.mode ?? pageFlip?.getOrientation() ?? 'landscape';
-				totalPages = pageFlip?.getPageCount() ?? htmlPages.length;
-				isReady = true;
-				replaceUrlForPage(currentPage);
-			});
-
-			pageFlip.on('flip', (event) => {
-				const flippedPage =
-					typeof event.data === 'number' ? event.data : (pageFlip?.getCurrentPageIndex() ?? 0);
-				currentPage = urlPageOverride ?? initialSlugPage ?? flippedPage;
-				replaceUrlForPage(currentPage);
-				urlPageOverride = null;
-			});
-
-			pageFlip.on('changeOrientation', (event) => {
-				if (event.data === 'portrait' || event.data === 'landscape') orientation = event.data;
-			});
-
-			pageFlip.loadFromHTML(htmlPages);
-		}
-
-		void setupFlipbook(element);
-
-		return () => {
-			cancelled = true;
-			pageFlip?.destroy();
-			pageFlip = null;
-		};
 	});
 
 	function restorePricingState(state: Partial<PricingInput>) {
@@ -217,110 +142,8 @@
 		return value === 'pages' || value === 'signs';
 	}
 
-	function stopPricingEvent(event: Event) {
-		event.stopPropagation();
-	}
-
-	function containPricingInteraction(node: HTMLElement) {
-		const options: AddEventListenerOptions = { capture: true, passive: true };
-		const eventNames = [
-			'click',
-			'dblclick',
-			'mousedown',
-			'mouseup',
-			'pointerdown',
-			'pointerup',
-			'touchstart',
-			'touchend',
-			'keydown',
-			'keyup'
-		];
-
-		for (const eventName of eventNames) node.addEventListener(eventName, stopPricingEvent, options);
-
-		return {
-			destroy() {
-				for (const eventName of eventNames)
-					node.removeEventListener(eventName, stopPricingEvent, options);
-			}
-		};
-	}
-
 	function formatEuro(amount: number) {
 		return euroFormatter.format(amount);
-	}
-
-	function pageIndexFromSlug(slug: string | undefined) {
-		if (!slug) return homePageIndex();
-		const index = pages.findIndex((page) => page.slug === slug);
-		return index >= 0 ? index : homePageIndex();
-	}
-
-	function pagePath(pageIndex: number) {
-		if (pageIndex === homePageIndex()) return '/';
-		const slug = pages[pageIndex]?.slug ?? '';
-		return slug ? `/${slug}` : '/';
-	}
-
-	function homePageIndex() {
-		const rootSlugIndex = pages.findIndex((page) => page.slug === '');
-		if (rootSlugIndex >= 0) return rootSlugIndex;
-
-		const coverIndex = pages.findIndex((page) => page.kind === 'cover');
-		return coverIndex >= 0 ? coverIndex : 0;
-	}
-
-	function pageIndexForTarget(slug: string | undefined) {
-		return pageIndexFromSlug(slug);
-	}
-
-	function replaceUrlForPage(pageIndex: number) {
-		const path = pagePath(pageIndex);
-		if (routePage.url.pathname !== path) replaceState(resolve(path), routePage.state);
-	}
-
-	function flipTo(page: number, corner: FlipCorner = 'bottom') {
-		if (!pageFlip || page === currentPage) return;
-		initialSlugPage = null;
-		urlPageOverride = page;
-		pageFlip.flip(page, corner);
-	}
-
-	function navigateInsidePage(event: MouseEvent, page: number, corner: FlipCorner = 'bottom') {
-		event.preventDefault();
-		event.stopPropagation();
-		flipTo(page, corner);
-	}
-
-	function goHome() {
-		const targetPage = homePageIndex();
-
-		initialSlugPage = null;
-		urlPageOverride = targetPage;
-		replaceUrlForPage(targetPage);
-		if (pageFlip && currentPage !== targetPage) pageFlip.flip(targetPage, 'top');
-	}
-
-	function nextPage() {
-		initialSlugPage = null;
-		pageFlip?.flipNext('bottom');
-	}
-
-	function previousPage() {
-		initialSlugPage = null;
-		pageFlip?.flipPrev('bottom');
-	}
-
-	function handleKeydown(event: KeyboardEvent) {
-		if (event.key === 'ArrowRight') nextPage();
-		if (event.key === 'ArrowLeft') previousPage();
-	}
-
-	function pageClass(page: PublishedPage) {
-		if (page.kind === 'cover') return 'cover-page';
-		if (page.kind === 'back_cover') return 'back-cover';
-		if (page.blocks.some((block) => block.type === 'pricingConfigurator')) return 'pricing-page';
-		return 'content-page';
 	}
 
 	function blockImageSource(block: Extract<PageBlock, { type: 'image' }>) {
@@ -328,176 +151,195 @@
 		return block.src ?? '';
 	}
 
-	function isInternalHref(href: string) {
-		return href.startsWith('/');
+	function openExternalHref(href: string) {
+		if (browser) window.location.href = href;
 	}
 
-	function openExternalHref(href: string) {
-		window.location.href = href;
+	function pageTone(page: PublishedPage) {
+		if (page.slug === '' || page.kind === 'cover') return 'home';
+		if (page.blocks.some((block) => block.type === 'pricingConfigurator')) return 'pricing';
+		if (page.blocks.some((block) => block.type === 'catalogueCards')) return 'books';
+		return 'content';
+	}
+
+	function pageOrderFromPath(pathname: string) {
+		const slug = slugFromPath(pathname);
+		const index = pages.findIndex((page) => page.slug === slug);
+		return index >= 0 ? index : 0;
+	}
+
+	function slugFromPath(pathname: string) {
+		const cleanPath = pathname.replace(/\/+$/, '');
+		const segment = cleanPath.split('/').filter(Boolean).at(-1) ?? '';
+
+		try {
+			return decodeURIComponent(segment);
+		} catch {
+			return segment;
+		}
 	}
 </script>
 
-<svelte:window onkeydown={handleKeydown} />
+<svelte:head>
+	<title>{data.seoTitle}</title>
+	<meta name="description" content={data.seoDescription} />
+	<meta property="og:title" content={data.seoTitle} />
+	<meta property="og:description" content={data.seoDescription} />
+	<meta property="og:image" content={data.ogImage} />
+</svelte:head>
 
-<main class="book-screen">
-	<header class="book-status" aria-label="Position dans le livre">
-		<button class="wordmark" type="button" onclick={goHome}>{data.book.settings.siteName}</button>
-		<div class="page-track" aria-hidden="true" style={`--progress: ${progress}%`}></div>
-		<span>{currentLabel}</span>
+<main class="site-shell" data-page={pageTone(activePage)}>
+	<header class="site-header">
+		<a
+			class="brand"
+			href={resolve('/')}
+			aria-label={`${data.book.settings.siteName} - accueil`}
+			onclick={() => (navIsOpen = false)}
+		>
+			<picture>
+				<source srcset={data.book.settings.coverLogoDark} media="(prefers-color-scheme: dark)" />
+				<img src={data.book.settings.coverLogoLight} alt="" />
+			</picture>
+			<span>{data.book.settings.siteName}</span>
+		</a>
+
+		<button
+			class="nav-toggle"
+			type="button"
+			aria-controls="site-navigation"
+			aria-expanded={navIsOpen}
+			aria-label="Ouvrir le menu"
+			title="Menu"
+			onclick={() => (navIsOpen = !navIsOpen)}
+		>
+			<span></span>
+			<span></span>
+			<span></span>
+		</button>
+
+		<nav id="site-navigation" class:open={navIsOpen} aria-label="Navigation principale">
+			<a
+				href={resolve('/')}
+				aria-current={activeSlug === '' ? 'page' : undefined}
+				onclick={() => (navIsOpen = false)}
+			>
+				<span>Accueil</span>
+			</a>
+			{#each navPages as item (item.id)}
+				<a
+					href={resolve(`/${item.slug}`)}
+					aria-current={activeSlug === item.slug ? 'page' : undefined}
+					onclick={() => (navIsOpen = false)}
+				>
+					<span>{item.navLabel}</span>
+					{#if item.navNote}<small>{item.navNote}</small>{/if}
+				</a>
+			{/each}
+		</nav>
+
+		{#if submissionPage}
+			<a
+				class="header-cta"
+				href={resolve(`/${submissionPage.slug}`)}
+				onclick={() => (navIsOpen = false)}>Soumettre</a
+			>
+		{/if}
 	</header>
 
-	<section
-		class="book-stage"
-		aria-label="Livre interactif À fleur de lignes"
-		data-orientation={orientation}
-	>
-		<button
-			class="turn-button turn-button--prev"
-			type="button"
-			onclick={previousPage}
-			disabled={!isReady || currentPage === 0}
-			aria-label="Page précédente"
-			title="Page précédente"
+	{#key activePage.id}
+		<article
+			class={`page-view page-view--${pageTone(activePage)}`}
+			data-turn={turnDirection}
+			aria-labelledby="page-title"
 		>
-			‹
-		</button>
+			{#if activePage.slug === '' || activePage.kind === 'cover'}
+				<section class="home-hero">
+					<img
+						class="hero-image"
+						src={resolve('/assets/brand/editorial-hero.png')}
+						alt="Table de travail éditorial avec manuscrit, livres et papiers de couverture"
+					/>
+					<div class="hero-overlay"></div>
+					<div class="hero-content">
+						{#each activePage.blocks as block (block.id)}
+							{@render renderBlock(block)}
+						{/each}
+					</div>
+				</section>
 
-		<div class="book-shadow">
-			<div
-				class:ready={isReady}
-				class="flipbook"
-				bind:this={bookElement}
-				aria-roledescription="livre interactif"
-			>
-				{#each pages as bookPage, pageIndex (bookPage.id)}
-					<article
-						class={`book-page ${pageClass(bookPage)}`}
-						data-density={bookPage.kind === 'cover' || bookPage.kind === 'back_cover'
-							? 'hard'
-							: undefined}
-						aria-label={bookPage.title}
-					>
-						{#if bookPage.kind === 'cover'}
-							<div class="cover-border">
-								<picture>
-									<source
-										srcset={data.book.settings.coverLogoDark}
-										media="(prefers-color-scheme: dark)"
-									/>
-									<img src={data.book.settings.coverLogoLight} alt={data.book.settings.siteName} />
-								</picture>
-								{#each bookPage.blocks as block (block.id)}
-									{@render renderBlock(block)}
-								{/each}
-							</div>
-						{:else if bookPage.kind === 'back_cover'}
-							<div class="cover-border">
-								<picture>
-									<source
-										srcset={data.book.settings.coverLogoDark}
-										media="(prefers-color-scheme: dark)"
-									/>
-									<img src={data.book.settings.coverLogoLight} alt={data.book.settings.siteName} />
-								</picture>
-								{#each bookPage.blocks as block (block.id)}
-									{@render renderBlock(block)}
-								{/each}
-							</div>
-						{:else if bookPage.slug === 'sommaire'}
-							<div class="page-inner">
-								<p class="folio">{pageIndex + 1}</p>
-								<h2>Sommaire</h2>
-								<nav class="contents-list" aria-label="Sommaire du site">
-									{#each contents as entry (entry.title)}
-										<button
-											type="button"
-											onclick={(event) => navigateInsidePage(event, entry.page)}
-											aria-current={currentPage === entry.page ? 'page' : undefined}
-										>
-											<span>{entry.title}</span>
-											<small>{entry.note}</small>
-											<i>{String(entry.page + 1).padStart(2, '0')}</i>
-										</button>
-									{/each}
-								</nav>
-							</div>
-						{:else}
-							<div class="page-inner">
-								<p class="folio">{pageIndex + 1}</p>
-								{#each bookPage.blocks as block (block.id)}
-									{@render renderBlock(block)}
-								{/each}
-							</div>
-						{/if}
-					</article>
-				{/each}
-			</div>
-		</div>
+				<section class="editorial-strip" aria-label="Prestations éditoriales">
+					{#each editorialHighlights as item (item)}
+						<span>{item}</span>
+					{/each}
+				</section>
+			{:else}
+				<section class="page-heading">
+					<p class="eyebrow">{activePage.navLabel}</p>
+					<h1 id="page-title">{activePage.title}</h1>
+					{#if activePage.navNote}<p>{activePage.navNote}</p>{/if}
+				</section>
 
-		<button
-			class="turn-button turn-button--next"
-			type="button"
-			onclick={nextPage}
-			disabled={!isReady || currentPage >= totalPages - 1}
-			aria-label="Page suivante"
-			title="Page suivante"
-		>
-			›
-		</button>
-	</section>
+				<div class="content-stack">
+					{#each activePage.blocks as block (block.id)}
+						{@render renderBlock(block)}
+					{/each}
+				</div>
+			{/if}
+		</article>
+	{/key}
 
-	<footer class="book-controls">
-		{#each contents.slice(0, 3) as entry (entry.title)}
-			<button type="button" onclick={() => flipTo(entry.page)} disabled={!isReady}
-				>{entry.title}</button
-			>
-		{/each}
-		<span>{String(currentPage + 1).padStart(2, '0')} / {String(totalPages).padStart(2, '0')}</span>
+	<footer class="site-footer">
+		<p>{data.book.settings.siteName}</p>
+		<nav aria-label="Navigation secondaire">
+			{#each navPages as item (item.id)}
+				<a href={resolve(`/${item.slug}`)}>{item.navLabel}</a>
+			{/each}
+		</nav>
 	</footer>
 </main>
 
 {#snippet renderBlock(block: PageBlock)}
 	{#if block.type === 'hero'}
-		<div class="cover-meta">
-			{#if block.eyebrow}<p>{block.eyebrow}</p>{/if}
-			<h1>{block.title}</h1>
+		<section class="hero-block">
+			{#if block.eyebrow}<p class="eyebrow">{block.eyebrow}</p>{/if}
+			{#if activePage.slug === '' || activePage.kind === 'cover'}
+				<h1 id="page-title">{block.title}</h1>
+			{:else}
+				<h2>{block.title}</h2>
+			{/if}
 			{#if block.body}<p class="lead">{block.body}</p>{/if}
 			{#if block.buttonLabel}
-				<button
-					type="button"
-					onclick={(event) => navigateInsidePage(event, pageIndexForTarget(block.targetSlug))}
-					disabled={!isReady}
-				>
+				<a class="button-link" href={resolve(block.targetSlug ? `/${block.targetSlug}` : '/')}>
 					{block.buttonLabel}
-				</button>
+				</a>
 			{/if}
-		</div>
+		</section>
 	{:else if block.type === 'paragraphs'}
 		<section class="copy-block">
 			{#if block.eyebrow}<p class="eyebrow">{block.eyebrow}</p>{/if}
 			{#if block.title}<h2>{block.title}</h2>{/if}
-			<div class="about-copy">
+			<div class="copy-flow">
 				{#each block.paragraphs as paragraph (paragraph)}
 					<p>{paragraph}</p>
 				{/each}
 			</div>
 		</section>
 	{:else if block.type === 'list'}
-		<section class="copy-block">
+		<section class="copy-block list-block">
 			{#if block.eyebrow}<p class="eyebrow">{block.eyebrow}</p>{/if}
 			<h2>{block.title}</h2>
+			{#if block.intro}<p class="lead">{block.intro}</p>{/if}
 			<ol class="manuscript-list">
 				{#each block.items as item (item)}
 					<li>{item}</li>
 				{/each}
 			</ol>
-			{#if block.intro}<p class="lead small">{block.intro}</p>{/if}
 		</section>
 	{:else if block.type === 'catalogueCards'}
-		<section class="copy-block">
+		<section class="copy-block catalogue-block">
 			{#if block.eyebrow}<p class="eyebrow">{block.eyebrow}</p>{/if}
 			<h2>{block.title}</h2>
-			<div class="shelf">
+			<div class="book-grid">
 				{#each block.cards as card (card.title)}
 					<section class="catalogue-card">
 						<p>{card.tag}</p>
@@ -511,29 +353,29 @@
 				<div class="press-note">
 					<p>{block.note}</p>
 					{#if block.ctaLabel}
-						<button
-							type="button"
-							onclick={(event) => navigateInsidePage(event, pageIndexForTarget(block.targetSlug))}
+						<a
+							class="button-link button-link--quiet"
+							href={resolve(block.targetSlug ? `/${block.targetSlug}` : '/')}
 						>
 							{block.ctaLabel}
-						</button>
+						</a>
 					{/if}
 				</div>
 			{/if}
 		</section>
 	{:else if block.type === 'contactLinks'}
-		<section class="copy-block">
+		<section class="copy-block contact-block">
 			{#if block.eyebrow}<p class="eyebrow">{block.eyebrow}</p>{/if}
 			<h2>{block.title}</h2>
 			<div class="contact-grid">
 				{#each block.links as link (link.href)}
-					{#if isInternalHref(link.href)}
+					{#if link.href.startsWith('/')}
 						<a href={resolve(link.href)}>
 							<span>{link.label}</span>
 							{link.text}
 						</a>
 					{:else}
-						<button type="button" class="contact-link" onclick={() => openExternalHref(link.href)}>
+						<button type="button" onclick={() => openExternalHref(link.href)}>
 							<span>{link.label}</span>
 							{link.text}
 						</button>
@@ -541,21 +383,19 @@
 				{/each}
 			</div>
 			{#if block.ctaLabel}
-				<button
-					class="inline-link"
-					type="button"
-					onclick={(event) =>
-						navigateInsidePage(event, pageIndexForTarget(block.targetSlug), 'top')}
+				<a
+					class="button-link button-link--quiet"
+					href={resolve(block.targetSlug ? `/${block.targetSlug}` : '/')}
 				>
 					{block.ctaLabel}
-				</button>
+				</a>
 			{/if}
 		</section>
 	{:else if block.type === 'pricingConfigurator'}
 		<section class="pricing-inner">
-			<p class="eyebrow">{block.eyebrow ?? 'Tarifs'}</p>
 			<div class="pricing-header">
 				<div>
+					<p class="eyebrow">{block.eyebrow ?? 'Tarifs'}</p>
 					<h2>{block.title}</h2>
 					<p class="lead">{block.lead}</p>
 				</div>
@@ -573,11 +413,7 @@
 				</aside>
 			</div>
 
-			<form
-				class="pricing-scroll"
-				use:containPricingInteraction
-				onsubmit={(event) => event.preventDefault()}
-			>
+			<form class="pricing-form" onsubmit={(event) => event.preventDefault()}>
 				<section class="pricing-group">
 					<h3>Projet</h3>
 					<div class="option-grid">
@@ -685,33 +521,40 @@
 			{#if block.caption}<figcaption>{block.caption}</figcaption>{/if}
 		</figure>
 	{:else if block.type === 'cta'}
-		<button
-			class="inline-link"
-			type="button"
-			onclick={(event) => navigateInsidePage(event, pageIndexForTarget(block.targetSlug))}
+		<a
+			class="button-link button-link--quiet"
+			href={resolve(block.targetSlug ? `/${block.targetSlug}` : '/')}
 		>
 			{block.label}
-		</button>
+		</a>
 	{/if}
 {/snippet}
 
 <style>
 	:global(:root) {
 		color-scheme: light;
-		--screen-bg: #c9d0c7;
-		--screen-ink: #151515;
-		--screen-muted: #5d625a;
-		--paper: #fbfaf4;
-		--paper-deep: #eee7d8;
-		--paper-ink: #171512;
-		--paper-muted: #6d655c;
-		--cover: #f7f7f4;
-		--cover-ink: #0b0b0b;
-		--line: rgba(22, 21, 19, 0.32);
-		--accent: #49624d;
-		--accent-strong: #7d2e34;
-		--gold: #a37a36;
-		--shadow: rgba(26, 19, 10, 0.28);
+		--bg: #f4f0e8;
+		--surface: #fffdf8;
+		--surface-warm: #efe5d6;
+		--ink: #24211d;
+		--muted: #6f685d;
+		--line: rgba(42, 36, 29, 0.16);
+		--sage: #63735f;
+		--sage-dark: #394b3f;
+		--clay: #a85f43;
+		--blue: #35536b;
+		--paper-shadow: rgba(45, 35, 22, 0.14);
+		--header-height: 5.35rem;
+		font-family:
+			Inter,
+			ui-sans-serif,
+			system-ui,
+			-apple-system,
+			BlinkMacSystemFont,
+			'Segoe UI',
+			sans-serif;
+		color: var(--ink);
+		background: var(--bg);
 	}
 
 	:global(*) {
@@ -719,444 +562,613 @@
 		letter-spacing: 0;
 	}
 
+	:global(body) {
+		background: var(--bg);
+	}
+
+	:global(a) {
+		color: inherit;
+	}
+
 	@media (prefers-color-scheme: dark) {
 		:global(:root) {
 			color-scheme: dark;
-			--screen-bg: #101412;
-			--screen-ink: #f2eee6;
-			--screen-muted: #a6aa9f;
-			--paper: #24231f;
-			--paper-deep: #181816;
-			--paper-ink: #f5efe4;
-			--paper-muted: #b9b1a3;
-			--cover: #020202;
-			--cover-ink: #f7f4eb;
-			--line: rgba(246, 239, 226, 0.28);
-			--accent: #9bb38f;
-			--accent-strong: #d79a6c;
-			--gold: #c8a96d;
-			--shadow: rgba(0, 0, 0, 0.55);
+			--bg: #191917;
+			--surface: #24231f;
+			--surface-warm: #302b24;
+			--ink: #f5efe4;
+			--muted: #b8afa1;
+			--line: rgba(245, 239, 228, 0.16);
+			--sage: #9baa8c;
+			--sage-dark: #c5d1b7;
+			--clay: #d28a68;
+			--blue: #9dbad0;
+			--paper-shadow: rgba(0, 0, 0, 0.34);
 		}
 	}
 
-	.book-screen {
-		min-height: 100dvh;
-		display: grid;
-		grid-template-rows: auto minmax(0, 1fr) auto;
-		gap: clamp(0.65rem, 1.4vw, 1.1rem);
-		padding: clamp(0.75rem, 2vw, 1.75rem);
-		overflow: hidden;
-		color: var(--screen-ink);
+	.site-shell {
+		min-height: 100svh;
 		background:
-			linear-gradient(90deg, rgba(255, 255, 255, 0.05) 1px, transparent 1px) 0 0 / 26px 26px,
-			linear-gradient(0deg, rgba(0, 0, 0, 0.05) 1px, transparent 1px) 0 0 / 26px 26px,
-			var(--screen-bg);
-		font-family: Georgia, 'Times New Roman', serif;
+			linear-gradient(90deg, color-mix(in srgb, var(--line) 36%, transparent) 1px, transparent 1px)
+				0 0 / 4rem 4rem,
+			var(--bg);
 	}
 
-	.book-status,
-	.book-controls {
-		width: min(100%, 78rem);
-		margin: 0 auto;
+	.site-header {
+		position: sticky;
+		top: 0;
+		z-index: 20;
+		min-height: var(--header-height);
 		display: grid;
-		grid-template-columns: auto minmax(5rem, 1fr) auto;
+		grid-template-columns: minmax(10rem, 1fr) auto auto;
 		align-items: center;
 		gap: clamp(0.75rem, 2vw, 1.4rem);
-		font-size: clamp(0.72rem, 1.2vw, 0.86rem);
-		color: var(--screen-muted);
+		padding: 0.8rem clamp(1rem, 4vw, 3rem);
+		border-bottom: 1px solid var(--line);
+		background: color-mix(in srgb, var(--surface) 90%, transparent);
+		backdrop-filter: blur(18px);
 	}
 
-	.wordmark,
-	.book-controls button,
-	.inline-link,
-	.cover-meta button,
-	.press-note button {
-		border: 1px solid var(--line);
-		background: color-mix(in srgb, var(--paper) 82%, transparent);
-		color: inherit;
-		font: inherit;
-		cursor: pointer;
-		transition:
-			transform 180ms ease,
-			border-color 180ms ease,
-			background 180ms ease;
-	}
-
-	.wordmark {
-		padding: 0.5rem 0.75rem;
-		color: var(--screen-ink);
-		text-transform: uppercase;
-	}
-
-	.page-track {
-		height: 1px;
-		background: linear-gradient(
-			90deg,
-			var(--accent) 0 var(--progress),
-			color-mix(in srgb, var(--line) 80%, transparent) var(--progress)
-		);
-	}
-
-	.book-stage {
-		position: relative;
-		min-height: 0;
-		display: grid;
-		grid-template-columns: auto minmax(0, 1fr) auto;
+	.brand {
+		display: inline-flex;
 		align-items: center;
-		gap: clamp(0.4rem, 1.3vw, 1rem);
+		gap: 0.8rem;
+		width: fit-content;
+		text-decoration: none;
+		font-family: Georgia, 'Times New Roman', serif;
+		font-size: clamp(1rem, 1.55vw, 1.24rem);
+		line-height: 1;
+		color: var(--ink);
 	}
 
-	.book-shadow {
-		width: min(100%, calc((100dvh - 9rem) * 1.44), 85rem);
-		margin: 0 auto;
-		filter: drop-shadow(0 1.6rem 2rem var(--shadow));
-	}
-
-	.flipbook {
-		width: 100%;
-		margin: 0 auto;
-	}
-
-	.flipbook:not(.ready) .book-page:not(:first-child) {
-		display: none;
-	}
-
-	:global(.stf__parent) {
-		margin: 0 auto;
-	}
-
-	.book-page {
-		position: absolute;
-		width: 100%;
-		height: 100%;
-		overflow: hidden;
-		background:
-			linear-gradient(
-				90deg,
-				rgba(0, 0, 0, 0.055),
-				transparent 5%,
-				transparent 95%,
-				rgba(0, 0, 0, 0.08)
-			),
-			linear-gradient(180deg, rgba(255, 255, 255, 0.18), transparent 16%), var(--paper);
-		color: var(--paper-ink);
-		box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--line) 72%, transparent);
-	}
-
-	.cover-page,
-	.back-cover {
-		background: var(--cover);
-		color: var(--cover-ink);
-		box-shadow:
-			inset 0 0 0 1px color-mix(in srgb, var(--cover-ink) 48%, transparent),
-			inset 0.9rem 0 1.5rem rgba(0, 0, 0, 0.18);
-	}
-
-	.cover-border {
-		position: absolute;
-		inset: clamp(1rem, 5%, 2.2rem);
-		display: grid;
-		place-items: center;
-		align-content: center;
-		gap: clamp(0.65rem, 2vw, 1.1rem);
-		padding: clamp(0.85rem, 3vw, 1.5rem);
-		border: 2px solid currentColor;
-		text-align: center;
-	}
-
-	.cover-border img {
-		width: min(82%, 20rem);
-		height: auto;
+	.brand picture,
+	.brand img {
+		width: 3.05rem;
+		aspect-ratio: 1;
 		display: block;
 	}
 
-	.cover-meta {
-		display: grid;
-		gap: 0.8rem;
-		justify-items: center;
-		max-width: 27rem;
+	.brand img {
+		height: auto;
+		object-fit: contain;
+		/* border-radius: 50%; */
 	}
 
-	.cover-meta p,
-	.eyebrow,
-	.folio,
+	#site-navigation {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 0.25rem;
+	}
+
+	#site-navigation a {
+		display: grid;
+		gap: 0.08rem;
+		min-height: 2.8rem;
+		align-content: center;
+		padding: 0.44rem 0.68rem;
+		border-radius: 999px;
+		color: var(--muted);
+		text-decoration: none;
+		font-size: clamp(0.82rem, 1vw, 0.94rem);
+		line-height: 1.05;
+		transition:
+			background 160ms ease,
+			color 160ms ease,
+			transform 160ms ease;
+	}
+
+	#site-navigation a:hover,
+	#site-navigation a[aria-current='page'] {
+		background: color-mix(in srgb, var(--sage) 14%, transparent);
+		color: var(--sage-dark);
+	}
+
+	#site-navigation a:hover {
+		transform: translateY(-1px);
+	}
+
+	#site-navigation small {
+		display: none;
+		font-size: 0.68rem;
+		color: var(--muted);
+	}
+
+	.header-cta,
+	.button-link {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: fit-content;
+		min-height: 2.78rem;
+		padding: 0.72rem 1.05rem;
+		border: 1px solid color-mix(in srgb, var(--sage-dark) 44%, transparent);
+		border-radius: 999px;
+		background: var(--sage-dark);
+		color: var(--surface);
+		text-decoration: none;
+		font-weight: 700;
+		font-size: 0.9rem;
+		line-height: 1;
+		transition:
+			transform 160ms ease,
+			background 160ms ease,
+			border-color 160ms ease;
+	}
+
+	.header-cta:hover,
+	.button-link:hover {
+		transform: translateY(-1px);
+		background: var(--clay);
+		border-color: var(--clay);
+	}
+
+	.button-link--quiet {
+		background: transparent;
+		color: var(--sage-dark);
+		border-color: color-mix(in srgb, var(--sage) 42%, transparent);
+	}
+
+	.button-link--quiet:hover {
+		color: var(--surface);
+	}
+
+	.nav-toggle {
+		display: none;
+		width: 2.75rem;
+		aspect-ratio: 1;
+		place-items: center;
+		border: 1px solid var(--line);
+		border-radius: 50%;
+		background: var(--surface);
+		color: var(--ink);
+		cursor: pointer;
+	}
+
+	.nav-toggle span {
+		width: 1.1rem;
+		height: 1.5px;
+		display: block;
+		background: currentColor;
+	}
+
+	.page-view {
+		position: relative;
+		min-height: calc(100svh - var(--header-height));
+		overflow-x: clip;
+		transform-origin: right center;
+		animation: page-enter-forward 620ms cubic-bezier(0.2, 0.72, 0.18, 1) both;
+	}
+
+	.page-view[data-turn='back'] {
+		transform-origin: left center;
+		animation-name: page-enter-back;
+	}
+
+	.page-view::after {
+		content: '';
+		position: absolute;
+		inset: 0;
+		z-index: 8;
+		pointer-events: none;
+		background: linear-gradient(
+			90deg,
+			transparent,
+			color-mix(in srgb, var(--surface) 72%, transparent) 42%,
+			color-mix(in srgb, var(--ink) 10%, transparent) 52%,
+			transparent
+		);
+		transform: translateX(-110%) skewX(-10deg);
+		animation: page-sheen-forward 620ms cubic-bezier(0.2, 0.72, 0.18, 1) both;
+	}
+
+	.page-view[data-turn='back']::after {
+		animation-name: page-sheen-back;
+	}
+
+	.home-hero {
+		position: relative;
+		min-height: min(46rem, calc(100svh - var(--header-height) - 5rem));
+		display: grid;
+		align-items: center;
+		overflow: hidden;
+		background: #ebe2d5;
+	}
+
+	.hero-image,
+	.hero-overlay {
+		position: absolute;
+		inset: 0;
+		width: 100%;
+		height: 100%;
+	}
+
+	.hero-image {
+		object-fit: cover;
+		object-position: center;
+	}
+
+	.hero-overlay {
+		background:
+			linear-gradient(
+				90deg,
+				rgba(244, 240, 232, 0.96) 0%,
+				rgba(244, 240, 232, 0.82) 34%,
+				rgba(244, 240, 232, 0.24) 68%,
+				rgba(244, 240, 232, 0.06) 100%
+			),
+			linear-gradient(180deg, rgba(244, 240, 232, 0.08), rgba(244, 240, 232, 0.34));
+	}
+
+	.hero-content {
+		position: relative;
+		z-index: 1;
+		width: min(100%, 76rem);
+		padding: clamp(3.4rem, 8vw, 7rem) clamp(1rem, 5vw, 4rem);
+	}
+
+	.hero-block,
+	.copy-block,
+	.pricing-inner,
+	.image-block {
+		display: grid;
+		gap: clamp(0.85rem, 1.6vw, 1.2rem);
+	}
+
+	.hero-block {
+		max-width: 44rem;
+	}
+
+	.eyebrow {
+		margin: 0;
+		color: var(--clay);
+		font-size: 0.76rem;
+		font-weight: 800;
+		letter-spacing: 0;
+		text-transform: uppercase;
+	}
+
+	h1,
+	h2,
+	h3,
+	p {
+		margin-top: 0;
+	}
+
+	h1,
+	h2,
+	h3 {
+		color: var(--ink);
+		text-wrap: balance;
+	}
+
+	h1 {
+		margin-bottom: 0;
+		font-family: Georgia, 'Times New Roman', serif;
+		font-size: clamp(3rem, 8vw, 7rem);
+		font-weight: 500;
+		line-height: 0.94;
+	}
+
+	h2 {
+		margin-bottom: 0;
+		font-family: Georgia, 'Times New Roman', serif;
+		font-size: clamp(1.9rem, 3.4vw, 3.2rem);
+		font-weight: 500;
+		line-height: 1;
+	}
+
+	h3 {
+		margin-bottom: 0;
+		font-size: clamp(1.05rem, 1.6vw, 1.28rem);
+		line-height: 1.12;
+	}
+
+	.lead {
+		margin-bottom: 0;
+		max-width: 42rem;
+		color: var(--muted);
+		font-size: clamp(1.04rem, 1.55vw, 1.28rem);
+		line-height: 1.55;
+	}
+
+	.editorial-strip {
+		width: min(100%, 76rem);
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.55rem;
+		margin: 0 auto;
+		padding: 1rem clamp(1rem, 4vw, 3rem) 1.25rem;
+	}
+
+	.editorial-strip span {
+		display: inline-flex;
+		align-items: center;
+		min-height: 2.1rem;
+		padding: 0.45rem 0.72rem;
+		border: 1px solid var(--line);
+		border-radius: 999px;
+		background: color-mix(in srgb, var(--surface) 78%, transparent);
+		color: var(--muted);
+		font-size: 0.86rem;
+	}
+
+	.page-heading,
+	.content-stack,
+	.site-footer {
+		width: min(100%, 76rem);
+		margin: 0 auto;
+		padding-inline: clamp(1rem, 4vw, 3rem);
+	}
+
+	.page-heading {
+		display: grid;
+		gap: 0.8rem;
+		padding-top: clamp(3rem, 7vw, 6rem);
+		padding-bottom: clamp(1.5rem, 3vw, 2.5rem);
+	}
+
+	.page-heading h1 {
+		max-width: 56rem;
+		font-size: clamp(2.6rem, 6vw, 5.4rem);
+	}
+
+	.page-heading p:not(.eyebrow) {
+		max-width: 38rem;
+		margin-bottom: 0;
+		color: var(--muted);
+		font-size: clamp(1rem, 1.6vw, 1.18rem);
+		line-height: 1.45;
+	}
+
+	.content-stack {
+		display: grid;
+		gap: clamp(1.4rem, 3vw, 2.5rem);
+		padding-bottom: clamp(4rem, 7vw, 6rem);
+	}
+
+	.copy-block {
+		max-width: 64rem;
+	}
+
+	.copy-flow {
+		display: grid;
+		gap: 0.8rem;
+		max-width: 54rem;
+	}
+
+	.copy-flow p {
+		margin-bottom: 0;
+		color: var(--muted);
+		font-size: clamp(1rem, 1.4vw, 1.14rem);
+		line-height: 1.72;
+	}
+
+	.list-block .lead {
+		font-size: clamp(1rem, 1.35vw, 1.14rem);
+	}
+
+	.manuscript-list {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 0.7rem;
+		margin: 0;
+		padding: 0;
+		list-style: none;
+		counter-reset: manuscript;
+	}
+
+	.manuscript-list li {
+		counter-increment: manuscript;
+		position: relative;
+		min-height: 4rem;
+		padding: 1rem 1rem 1rem 3.2rem;
+		border: 1px solid var(--line);
+		background: color-mix(in srgb, var(--surface) 86%, transparent);
+		color: var(--ink);
+		line-height: 1.35;
+	}
+
+	.manuscript-list li::before {
+		content: counter(manuscript, decimal-leading-zero);
+		position: absolute;
+		left: 1rem;
+		top: 1rem;
+		color: var(--clay);
+		font-size: 0.76rem;
+		font-weight: 800;
+	}
+
+	.book-grid {
+		display: grid;
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+		gap: clamp(0.85rem, 1.8vw, 1.25rem);
+	}
+
+	.catalogue-card,
+	.contact-grid a,
+	.contact-grid button,
+	.press-note,
+	.estimate-box,
+	.pricing-group {
+		border: 1px solid var(--line);
+		background: color-mix(in srgb, var(--surface) 92%, transparent);
+		box-shadow: 0 1rem 2.2rem var(--paper-shadow);
+	}
+
+	.catalogue-card {
+		min-height: 17rem;
+		display: grid;
+		align-content: end;
+		gap: 0.55rem;
+		padding: 1.15rem;
+		border-top: 0.34rem solid var(--sage);
+	}
+
+	.catalogue-card:nth-child(2n) {
+		border-top-color: var(--clay);
+	}
+
+	.catalogue-card:nth-child(3n) {
+		border-top-color: var(--blue);
+	}
+
 	.catalogue-card p,
+	.catalogue-card span,
+	.catalogue-card strong,
 	.contact-grid span,
 	.estimate-box span,
 	.estimate-box small,
 	.pricing-group h3,
 	.pricing-group label > span {
 		margin: 0;
-		font-family: ui-sans-serif, system-ui, sans-serif;
+	}
+
+	.catalogue-card p,
+	.contact-grid span,
+	.estimate-box span,
+	.estimate-box small,
+	.pricing-group h3,
+	.pricing-group label > span {
+		color: var(--muted);
+		font-size: 0.74rem;
+		font-weight: 800;
 		text-transform: uppercase;
-		font-size: clamp(0.64rem, 1.2vw, 0.76rem);
-		color: var(--paper-muted);
-	}
-
-	.cover-meta h1 {
-		margin: 0;
-		font-size: clamp(1.65rem, 3.4vw, 2.65rem);
-		line-height: 1.04;
-		font-weight: 500;
-		text-wrap: balance;
-	}
-
-	.cover-meta button,
-	.inline-link,
-	.press-note button {
-		padding: 0.72rem 1rem;
-		min-height: 2.6rem;
-		color: var(--paper-ink);
-		background: var(--paper);
-	}
-
-	button:hover:not(:disabled) {
-		transform: translateY(-1px);
-		border-color: var(--accent);
-	}
-
-	button:disabled {
-		cursor: not-allowed;
-		opacity: 0.45;
-	}
-
-	.page-inner {
-		position: relative;
-		z-index: 1;
-		height: 100%;
-		display: grid;
-		align-content: start;
-		gap: clamp(0.52rem, 1vw, 0.78rem);
-		padding: clamp(1rem, 3.2vw, 2.2rem) clamp(1rem, 3.2vw, 2.2rem) clamp(2.3rem, 4vw, 3rem);
-	}
-
-	.folio {
-		position: absolute;
-		left: 50%;
-		bottom: clamp(0.65rem, 1.5vw, 1rem);
-		transform: translateX(-50%);
-	}
-
-	h2,
-	.page-inner h2 {
-		margin: 0;
-		font-size: clamp(1.55rem, 2.75vw, 2.35rem);
-		line-height: 1.02;
-		font-weight: 500;
-		color: var(--paper-ink);
-		text-wrap: balance;
-	}
-
-	.lead {
-		margin: 0;
-		max-width: 34rem;
-		font-size: clamp(0.9rem, 1.4vw, 1rem);
-		line-height: 1.42;
-		color: var(--paper-muted);
-	}
-
-	.copy-block,
-	.about-copy,
-	.shelf,
-	.contact-grid,
-	.pricing-scroll,
-	.pricing-group,
-	.breakdown dl {
-		display: grid;
-		gap: clamp(0.48rem, 1vw, 0.72rem);
-	}
-
-	.about-copy p {
-		margin: 0;
-		color: var(--paper-muted);
-		font-size: clamp(0.9rem, 1.28vw, 1.08rem);
-		line-height: 1.5;
-		text-align: justify;
-		text-align-last: left;
-		hyphens: auto;
-	}
-
-	.contents-list {
-		display: grid;
-		gap: 0;
-		margin-top: clamp(0.2rem, 1vw, 0.5rem);
-	}
-
-	.contents-list button {
-		display: grid;
-		grid-template-columns: minmax(0, 1fr) auto;
-		align-items: baseline;
-		gap: 0.08rem 0.75rem;
-		padding: clamp(0.3rem, 0.85vw, 0.46rem) 0;
-		border: 0;
-		border-bottom: 1px solid var(--line);
-		background: transparent;
-		color: var(--paper-ink);
-		text-align: left;
-		cursor: pointer;
-	}
-
-	.contents-list small {
-		grid-column: 1 / -1;
-		font-family: ui-sans-serif, system-ui, sans-serif;
-		font-size: clamp(0.61rem, 0.9vw, 0.68rem);
-		color: var(--paper-muted);
-	}
-
-	.contents-list i {
-		font-style: normal;
-		color: var(--accent);
-	}
-
-	.catalogue-card,
-	.contact-grid a,
-	.contact-link,
-	.press-note,
-	.estimate-box,
-	.pricing-group {
-		border: 1px solid var(--line);
-		background: color-mix(in srgb, var(--paper) 76%, var(--paper-deep));
-	}
-
-	.catalogue-card {
-		min-height: clamp(4.65rem, 8vw, 5.6rem);
-		display: grid;
-		align-content: space-between;
-		padding: clamp(0.52rem, 1.2vw, 0.7rem);
-		border-left: 0.34rem solid var(--accent);
 	}
 
 	.catalogue-card h3 {
-		margin: 0.12rem 0;
-		font-size: clamp(1.05rem, 1.55vw, 1.28rem);
-		line-height: 1.1;
+		font-family: Georgia, 'Times New Roman', serif;
+		font-size: clamp(1.35rem, 2vw, 1.8rem);
 		font-weight: 500;
 	}
 
-	.catalogue-card span,
-	.press-note p,
-	.manuscript-list,
-	.back-cover p {
-		margin: 0;
-		color: var(--paper-muted);
-		font-size: clamp(0.8rem, 1.05vw, 0.94rem);
-		line-height: 1.38;
+	.catalogue-card span {
+		color: var(--muted);
 	}
 
 	.catalogue-card strong {
-		color: var(--accent-strong);
-		font-weight: 500;
+		color: var(--clay);
+		font-weight: 800;
 	}
 
 	.press-note {
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
-		gap: 0.8rem;
-		padding: 0.62rem;
+		gap: 1rem;
+		padding: 1rem;
+		box-shadow: none;
 	}
 
-	.manuscript-list {
-		padding-left: 1.4rem;
-		font-size: clamp(1rem, 1.8vw, 1.18rem);
+	.press-note p {
+		margin-bottom: 0;
+		color: var(--muted);
+		line-height: 1.45;
 	}
 
-	.contact-grid a,
-	.contact-link {
+	.contact-grid {
 		display: grid;
-		gap: 0.3rem;
-		padding: clamp(0.85rem, 2vw, 1rem);
-		color: var(--paper-ink);
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+		gap: clamp(0.85rem, 1.8vw, 1.25rem);
+	}
+
+	.contact-grid a {
+		display: grid;
+		gap: 0.45rem;
+		min-height: 8.5rem;
+		align-content: end;
+		padding: 1rem;
+		color: var(--ink);
+		text-decoration: none;
+		overflow-wrap: anywhere;
+		transition:
+			transform 160ms ease,
+			border-color 160ms ease;
+	}
+
+	.contact-grid button {
+		display: grid;
+		gap: 0.45rem;
+		min-height: 8.5rem;
+		align-content: end;
+		padding: 1rem;
+		border: 1px solid var(--line);
+		color: var(--ink);
+		font: inherit;
 		text-decoration: none;
 		overflow-wrap: anywhere;
 		text-align: left;
+		cursor: pointer;
+		transition:
+			transform 160ms ease,
+			border-color 160ms ease;
+	}
+
+	.contact-grid a:hover,
+	.contact-grid button:hover {
+		transform: translateY(-2px);
+		border-color: color-mix(in srgb, var(--sage) 52%, transparent);
 	}
 
 	.image-block {
 		margin: 0;
-		display: grid;
-		gap: 0.45rem;
 	}
 
 	.image-block img {
 		width: 100%;
-		max-height: 26rem;
+		max-height: 32rem;
 		object-fit: cover;
 	}
 
 	.image-block figcaption {
-		color: var(--paper-muted);
-		font-size: 0.82rem;
+		color: var(--muted);
+		font-size: 0.9rem;
 	}
 
 	.pricing-inner {
-		height: 100%;
-		min-height: 0;
-		display: grid;
-		grid-template-rows: auto auto minmax(0, 1fr);
-		gap: 0.42rem;
-		overflow: hidden;
-	}
-
-	.pricing-page .page-inner {
-		align-content: stretch;
-		grid-template-rows: minmax(0, 1fr);
-		min-height: 0;
+		max-width: none;
 	}
 
 	.pricing-header {
 		display: grid;
-		grid-template-columns: 1fr;
-		gap: 0.42rem;
+		grid-template-columns: minmax(0, 1fr) minmax(16rem, 24rem);
+		gap: clamp(1rem, 2vw, 1.5rem);
 		align-items: stretch;
 	}
 
-	.pricing-header h2 {
-		font-size: clamp(1.12rem, 1.9vw, 1.55rem);
-		line-height: 1;
-	}
-
-	.pricing-header .lead {
-		margin-top: 0.26rem;
-		font-size: clamp(0.7rem, 0.9vw, 0.78rem);
-		line-height: 1.25;
-	}
-
 	.estimate-box {
-		display: flex;
-		align-items: baseline;
-		justify-content: space-between;
-		gap: 0.45rem;
-		padding: 0.5rem 0.62rem;
-		border-left: 0.34rem solid var(--accent-strong);
+		display: grid;
+		gap: 0.35rem;
+		align-content: center;
+		padding: clamp(1rem, 2vw, 1.35rem);
+		border-left: 0.38rem solid var(--clay);
 	}
 
 	.estimate-box strong {
-		font-size: clamp(1.12rem, 2vw, 1.45rem);
-		line-height: 1;
+		color: var(--clay);
+		font-family: Georgia, 'Times New Roman', serif;
+		font-size: clamp(2rem, 4vw, 3.1rem);
 		font-weight: 500;
-		color: var(--accent-strong);
+		line-height: 0.95;
 	}
 
 	.estimate-box small {
-		margin-left: auto;
+		line-height: 1.25;
 		text-transform: none;
-		line-height: 1.2;
-		text-align: right;
 	}
 
-	.pricing-scroll {
-		min-height: 0;
-		overflow: auto;
-		overscroll-behavior: contain;
-		padding-right: 0.28rem;
-		scrollbar-width: thin;
-		touch-action: pan-y;
-		-webkit-overflow-scrolling: touch;
+	.pricing-form {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: clamp(0.9rem, 1.8vw, 1.25rem);
 	}
 
 	.pricing-group {
-		padding: clamp(0.56rem, 1.2vw, 0.76rem);
+		display: grid;
+		gap: 0.75rem;
+		padding: clamp(0.95rem, 1.8vw, 1.2rem);
+		box-shadow: none;
 	}
 
 	.option-grid,
@@ -1165,7 +1177,7 @@
 	.compact-fields {
 		display: grid;
 		grid-template-columns: repeat(2, minmax(0, 1fr));
-		gap: 0.48rem;
+		gap: 0.58rem;
 	}
 
 	.option-grid label,
@@ -1174,11 +1186,10 @@
 	.compact-fields label {
 		display: flex;
 		align-items: center;
-		gap: 0.45rem;
-		min-height: 2.25rem;
-		color: var(--paper-ink);
-		font-family: ui-sans-serif, system-ui, sans-serif;
-		font-size: clamp(0.72rem, 1vw, 0.84rem);
+		gap: 0.48rem;
+		min-height: 2.45rem;
+		color: var(--ink);
+		font-size: 0.92rem;
 		line-height: 1.18;
 	}
 
@@ -1191,27 +1202,26 @@
 	.pricing-group input,
 	.pricing-group select {
 		width: 100%;
-		min-height: 2.25rem;
+		min-height: 2.5rem;
 		border: 1px solid var(--line);
-		border-radius: 0;
-		background: var(--paper);
-		color: var(--paper-ink);
-		font-family: ui-sans-serif, system-ui, sans-serif;
-		font-size: 0.86rem;
+		border-radius: 0.35rem;
+		background: var(--surface);
+		color: var(--ink);
+		font: inherit;
 	}
 
 	.pricing-group input[type='radio'],
 	.pricing-group input[type='checkbox'] {
 		position: relative;
-		width: 1.05rem;
-		height: 1.05rem;
-		min-height: 1.05rem;
+		width: 1.08rem;
+		height: 1.08rem;
+		min-height: 1.08rem;
 		flex: 0 0 auto;
 		appearance: none;
-		border: 1.5px solid color-mix(in srgb, var(--paper-ink) 58%, transparent);
-		border-radius: 0;
-		background: color-mix(in srgb, var(--paper) 88%, white);
-		box-shadow: inset 0 0 0 2px var(--paper);
+		border: 1.5px solid color-mix(in srgb, var(--ink) 48%, transparent);
+		border-radius: 0.25rem;
+		background: var(--surface);
+		box-shadow: inset 0 0 0 2px var(--surface);
 		cursor: pointer;
 	}
 
@@ -1221,18 +1231,18 @@
 
 	.pricing-group input[type='checkbox']:checked,
 	.pricing-group input[type='radio']:checked {
-		border-color: var(--accent-strong);
-		background: var(--accent-strong);
+		border-color: var(--sage-dark);
+		background: var(--sage-dark);
 	}
 
 	.pricing-group input[type='checkbox']:checked::after {
 		content: '';
 		position: absolute;
-		left: 0.3rem;
+		left: 0.31rem;
 		top: 0.12rem;
 		width: 0.35rem;
 		height: 0.62rem;
-		border: solid var(--paper);
+		border: solid var(--surface);
 		border-width: 0 0.13rem 0.13rem 0;
 		transform: rotate(45deg);
 	}
@@ -1240,24 +1250,38 @@
 	.pricing-group input[type='radio']:checked::after {
 		content: '';
 		position: absolute;
-		inset: 0.27rem;
+		inset: 0.29rem;
 		border-radius: 50%;
-		background: var(--paper);
+		background: var(--surface);
 	}
 
-	.pricing-group input[type='checkbox']:focus-visible,
-	.pricing-group input[type='radio']:focus-visible {
-		outline: 2px solid var(--gold);
-		outline-offset: 2px;
+	.pricing-group input:focus-visible,
+	.pricing-group select:focus-visible,
+	.button-link:focus-visible,
+	.header-cta:focus-visible,
+	#site-navigation a:focus-visible,
+	.brand:focus-visible,
+	.nav-toggle:focus-visible {
+		outline: 2px solid var(--clay);
+		outline-offset: 3px;
+	}
+
+	.breakdown {
+		grid-column: 1 / -1;
+	}
+
+	.breakdown dl {
+		display: grid;
+		gap: 0.45rem;
+		margin: 0;
 	}
 
 	.breakdown div {
 		display: flex;
 		justify-content: space-between;
 		gap: 0.8rem;
-		border-bottom: 1px solid color-mix(in srgb, var(--line) 72%, transparent);
-		font-family: ui-sans-serif, system-ui, sans-serif;
-		font-size: clamp(0.72rem, 1vw, 0.84rem);
+		border-bottom: 1px solid color-mix(in srgb, var(--line) 74%, transparent);
+		padding-bottom: 0.4rem;
 	}
 
 	.breakdown dt,
@@ -1266,103 +1290,233 @@
 	}
 
 	.breakdown dd {
-		color: var(--accent-strong);
-		font-weight: 700;
+		color: var(--clay);
+		font-weight: 800;
 	}
 
-	.turn-button {
-		width: clamp(2.25rem, 4vw, 3rem);
-		aspect-ratio: 1;
-		display: grid;
-		place-items: center;
-		border: 1px solid var(--line);
-		background: color-mix(in srgb, var(--paper) 78%, transparent);
-		color: var(--screen-ink);
-		font-size: clamp(1.6rem, 4vw, 2.5rem);
-		line-height: 1;
-		cursor: pointer;
+	.site-footer {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 1rem;
+		padding-block: 1.4rem;
+		border-top: 1px solid var(--line);
+		color: var(--muted);
 	}
 
-	.book-controls {
-		grid-template-columns: repeat(3, auto) 1fr;
+	.site-footer p {
+		margin-bottom: 0;
+		font-family: Georgia, 'Times New Roman', serif;
+		color: var(--ink);
 	}
 
-	.book-controls button {
-		padding: 0.5rem 0.7rem;
-		color: var(--screen-ink);
+	.site-footer nav {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.8rem;
+		justify-content: flex-end;
 	}
 
-	.book-controls span {
-		justify-self: end;
-		color: var(--screen-muted);
+	.site-footer a {
+		color: var(--muted);
+		text-decoration: none;
 	}
 
-	@media (max-width: 880px) {
-		.book-screen {
-			gap: 0.7rem;
-			padding: 0.7rem;
-		}
+	.site-footer a:hover {
+		color: var(--sage-dark);
+	}
 
-		.book-status {
-			grid-template-columns: 1fr auto;
+	@keyframes page-enter-forward {
+		0% {
+			opacity: 0.58;
+			transform: perspective(1800px) rotateY(16deg) translateX(4%);
+			filter: brightness(1.08);
 		}
-
-		.book-status .page-track {
-			grid-column: 1 / -1;
-			order: 3;
-		}
-
-		.book-shadow {
-			width: min(100%, calc((100dvh - 8.2rem) * 0.72), 30rem);
-		}
-
-		.book-stage {
-			grid-template-columns: 1fr;
-		}
-
-		.turn-button {
-			position: absolute;
-			z-index: 5;
-			bottom: clamp(0.4rem, 2vw, 0.8rem);
-			background: color-mix(in srgb, var(--paper) 90%, transparent);
-		}
-
-		.turn-button--prev {
-			left: 0;
-		}
-
-		.turn-button--next {
-			right: 0;
+		100% {
+			opacity: 1;
+			transform: perspective(1800px) rotateY(0) translateX(0);
+			filter: brightness(1);
 		}
 	}
 
-	@media (max-width: 560px) {
-		.cover-border {
-			inset: 0.75rem;
-			padding: 1rem;
+	@keyframes page-enter-back {
+		0% {
+			opacity: 0.58;
+			transform: perspective(1800px) rotateY(-16deg) translateX(-4%);
+			filter: brightness(1.08);
+		}
+		100% {
+			opacity: 1;
+			transform: perspective(1800px) rotateY(0) translateX(0);
+			filter: brightness(1);
+		}
+	}
+
+	@keyframes page-sheen-forward {
+		0% {
+			opacity: 0;
+			transform: translateX(-110%) skewX(-10deg);
+		}
+		22% {
+			opacity: 0.64;
+		}
+		100% {
+			opacity: 0;
+			transform: translateX(110%) skewX(-10deg);
+		}
+	}
+
+	@keyframes page-sheen-back {
+		0% {
+			opacity: 0;
+			transform: translateX(110%) skewX(10deg);
+		}
+		22% {
+			opacity: 0.64;
+		}
+		100% {
+			opacity: 0;
+			transform: translateX(-110%) skewX(10deg);
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.page-view,
+		.page-view::after {
+			animation: none;
 		}
 
-		.page-inner {
-			padding: 1.05rem 1.05rem 2.55rem;
-			gap: 0.65rem;
+		* {
+			scroll-behavior: auto;
+		}
+	}
+
+	@media (max-width: 980px) {
+		.site-header {
+			grid-template-columns: minmax(0, 1fr) auto auto;
 		}
 
-		.about-copy p {
-			font-size: 0.82rem;
-			line-height: 1.34;
-		}
-
-		.press-note {
+		.nav-toggle {
 			display: grid;
 		}
 
-		.book-controls {
-			grid-template-columns: repeat(3, 1fr);
+		#site-navigation {
+			position: absolute;
+			top: calc(100% + 1px);
+			left: 0;
+			right: 0;
+			display: none;
+			grid-template-columns: repeat(2, minmax(0, 1fr));
+			gap: 0;
+			padding: 0.65rem clamp(1rem, 4vw, 3rem) 1rem;
+			border-bottom: 1px solid var(--line);
+			background: var(--surface);
+			box-shadow: 0 1rem 2rem var(--paper-shadow);
 		}
 
-		.book-controls span {
-			grid-column: 1 / -1;
-			justify-self: center;
+		#site-navigation.open {
+			display: grid;
+		}
+
+		#site-navigation a {
+			border-radius: 0.45rem;
+		}
+
+		#site-navigation small {
+			display: block;
+		}
+
+		.home-hero {
+			min-height: 34rem;
+		}
+
+		.hero-overlay {
+			background:
+				linear-gradient(90deg, rgba(244, 240, 232, 0.96), rgba(244, 240, 232, 0.46)),
+				linear-gradient(180deg, rgba(244, 240, 232, 0.1), rgba(244, 240, 232, 0.6));
+		}
+
+		.book-grid,
+		.contact-grid,
+		.pricing-header,
+		.pricing-form {
+			grid-template-columns: 1fr;
+		}
+
+		.catalogue-card {
+			min-height: 11rem;
+		}
+	}
+
+	@media (max-width: 640px) {
+		:global(:root) {
+			--header-height: 4.9rem;
+		}
+
+		.site-header {
+			gap: 0.6rem;
+			padding-inline: 0.85rem;
+		}
+
+		.brand {
+			gap: 0.55rem;
+			font-size: 0.98rem;
+		}
+
+		.brand picture,
+		.brand img {
+			width: 2.55rem;
+		}
+
+		.header-cta {
+			display: none;
+		}
+
+		#site-navigation {
+			grid-template-columns: 1fr;
+		}
+
+		.home-hero {
+			min-height: calc(100svh - var(--header-height) - 4.5rem);
+		}
+
+		.hero-image {
+			object-position: 62% center;
+		}
+
+		.hero-overlay {
+			background:
+				linear-gradient(180deg, rgba(244, 240, 232, 0.96), rgba(244, 240, 232, 0.58)),
+				linear-gradient(90deg, rgba(244, 240, 232, 0.94), rgba(244, 240, 232, 0.18));
+		}
+
+		h1 {
+			font-size: clamp(2.8rem, 18vw, 4.5rem);
+		}
+
+		.page-heading h1 {
+			font-size: clamp(2.45rem, 14vw, 4rem);
+		}
+
+		.editorial-strip {
+			padding-top: 0.8rem;
+		}
+
+		.manuscript-list,
+		.option-grid,
+		.toggle-grid,
+		.volume-grid,
+		.compact-fields {
+			grid-template-columns: 1fr;
+		}
+
+		.press-note,
+		.site-footer {
+			display: grid;
+		}
+
+		.site-footer nav {
+			justify-content: start;
 		}
 	}
 </style>

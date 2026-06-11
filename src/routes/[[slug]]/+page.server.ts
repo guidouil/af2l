@@ -1,11 +1,15 @@
 import type { PageServerLoad } from './$types';
+import { defaultPages } from '$lib/content/defaults';
+import type { PublishedBook } from '$lib/content/types';
 import { getPricingConfig, getPublishedBook } from '$lib/server/content';
 
 export const load: PageServerLoad = async ({ params }) => {
-	const [book, pricing] = await Promise.all([getPublishedBook(), getPricingConfig('published')]);
+	const [rawBook, pricing] = await Promise.all([getPublishedBook(), getPricingConfig('published')]);
+	const book = normalizeLegacyPublicStructure(rawBook);
+	const requestedSlug = resolveRequestedSlug(params.slug ?? '', book);
 	const initialPage = Math.max(
 		0,
-		book.pages.findIndex((page) => page.slug === (params.slug ?? ''))
+		book.pages.findIndex((page) => page.slug === requestedSlug)
 	);
 	const currentPage = book.pages[initialPage] ?? book.pages[0];
 
@@ -18,3 +22,33 @@ export const load: PageServerLoad = async ({ params }) => {
 		ogImage: book.settings.ogImage
 	};
 };
+
+const legacySlugAliases: Record<string, string> = {
+	catalogue: 'livres',
+	manuscrits: 'soumission',
+	sommaire: '',
+	auteurs: 'soumission',
+	dos: ''
+};
+
+function normalizeLegacyPublicStructure(book: PublishedBook): PublishedBook {
+	const slugs = new Set(book.pages.map((page) => page.slug));
+	const hasLegacyBookSite =
+		slugs.has('sommaire') &&
+		slugs.has('catalogue') &&
+		slugs.has('manuscrits') &&
+		!slugs.has('livres') &&
+		!slugs.has('soumission');
+
+	if (!hasLegacyBookSite) return book;
+
+	return {
+		...book,
+		pages: defaultPages
+	};
+}
+
+function resolveRequestedSlug(slug: string, book: PublishedBook) {
+	if (book.pages.some((page) => page.slug === slug)) return slug;
+	return legacySlugAliases[slug] ?? slug;
+}
