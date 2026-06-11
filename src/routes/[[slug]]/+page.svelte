@@ -252,14 +252,23 @@
 	}
 
 	function pageIndexFromSlug(slug: string | undefined) {
-		if (!slug) return 0;
+		if (!slug) return homePageIndex();
 		const index = pages.findIndex((page) => page.slug === slug);
-		return index >= 0 ? index : 0;
+		return index >= 0 ? index : homePageIndex();
 	}
 
 	function pagePath(pageIndex: number) {
+		if (pageIndex === homePageIndex()) return '/';
 		const slug = pages[pageIndex]?.slug ?? '';
 		return slug ? `/${slug}` : '/';
+	}
+
+	function homePageIndex() {
+		const rootSlugIndex = pages.findIndex((page) => page.slug === '');
+		if (rootSlugIndex >= 0) return rootSlugIndex;
+
+		const coverIndex = pages.findIndex((page) => page.kind === 'cover');
+		return coverIndex >= 0 ? coverIndex : 0;
 	}
 
 	function pageIndexForTarget(slug: string | undefined) {
@@ -285,10 +294,12 @@
 	}
 
 	function goHome() {
+		const targetPage = homePageIndex();
+
 		initialSlugPage = null;
-		urlPageOverride = 0;
-		replaceUrlForPage(0);
-		if (pageFlip && currentPage !== 0) pageFlip.flip(0, 'top');
+		urlPageOverride = targetPage;
+		replaceUrlForPage(targetPage);
+		if (pageFlip && currentPage !== targetPage) pageFlip.flip(targetPage, 'top');
 	}
 
 	function nextPage() {
