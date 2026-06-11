@@ -222,7 +222,7 @@
 	}
 
 	function containPricingInteraction(node: HTMLElement) {
-		const options = { capture: true };
+		const options: AddEventListenerOptions = { capture: true, passive: true };
 		const eventNames = [
 			'click',
 			'dblclick',
@@ -233,8 +233,7 @@
 			'touchstart',
 			'touchend',
 			'keydown',
-			'keyup',
-			'wheel'
+			'keyup'
 		];
 
 		for (const eventName of eventNames) node.addEventListener(eventName, stopPricingEvent, options);
@@ -553,7 +552,7 @@
 			{/if}
 		</section>
 	{:else if block.type === 'pricingConfigurator'}
-		<section class="pricing-inner" use:containPricingInteraction>
+		<section class="pricing-inner">
 			<p class="eyebrow">{block.eyebrow ?? 'Tarifs'}</p>
 			<div class="pricing-header">
 				<div>
@@ -1092,9 +1091,17 @@
 
 	.pricing-inner {
 		height: 100%;
+		min-height: 0;
 		display: grid;
 		grid-template-rows: auto auto minmax(0, 1fr);
 		gap: 0.42rem;
+		overflow: hidden;
+	}
+
+	.pricing-page .page-inner {
+		align-content: stretch;
+		grid-template-rows: minmax(0, 1fr);
+		min-height: 0;
 	}
 
 	.pricing-header {
@@ -1141,8 +1148,11 @@
 	.pricing-scroll {
 		min-height: 0;
 		overflow: auto;
+		overscroll-behavior: contain;
 		padding-right: 0.28rem;
 		scrollbar-width: thin;
+		touch-action: pan-y;
+		-webkit-overflow-scrolling: touch;
 	}
 
 	.pricing-group {
@@ -1192,10 +1202,53 @@
 
 	.pricing-group input[type='radio'],
 	.pricing-group input[type='checkbox'] {
+		position: relative;
 		width: 1.05rem;
 		height: 1.05rem;
 		min-height: 1.05rem;
 		flex: 0 0 auto;
+		appearance: none;
+		border: 1.5px solid color-mix(in srgb, var(--paper-ink) 58%, transparent);
+		border-radius: 0;
+		background: color-mix(in srgb, var(--paper) 88%, white);
+		box-shadow: inset 0 0 0 2px var(--paper);
+		cursor: pointer;
+	}
+
+	.pricing-group input[type='radio'] {
+		border-radius: 50%;
+	}
+
+	.pricing-group input[type='checkbox']:checked,
+	.pricing-group input[type='radio']:checked {
+		border-color: var(--accent-strong);
+		background: var(--accent-strong);
+	}
+
+	.pricing-group input[type='checkbox']:checked::after {
+		content: '';
+		position: absolute;
+		left: 0.3rem;
+		top: 0.12rem;
+		width: 0.35rem;
+		height: 0.62rem;
+		border: solid var(--paper);
+		border-width: 0 0.13rem 0.13rem 0;
+		transform: rotate(45deg);
+	}
+
+	.pricing-group input[type='radio']:checked::after {
+		content: '';
+		position: absolute;
+		inset: 0.27rem;
+		border-radius: 50%;
+		background: var(--paper);
+	}
+
+	.pricing-group input[type='checkbox']:focus-visible,
+	.pricing-group input[type='radio']:focus-visible {
+		outline: 2px solid var(--gold);
+		outline-offset: 2px;
 	}
 
 	.breakdown div {
