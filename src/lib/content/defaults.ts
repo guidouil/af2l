@@ -127,10 +127,10 @@ export const defaultPages: PublishedPage[] = [
 	{
 		id: 5,
 		slug: 'soumission',
-		title: 'Soumission',
-		navLabel: 'Soumission',
-		navNote: 'Proposer un texte',
-		seoTitle: 'Soumission | À fleur de lignes',
+		title: 'Dépôt de projet',
+		navLabel: 'Dépôt de projet',
+		navNote: 'Manuscrit ou projet éditorial',
+		seoTitle: 'Dépôt de projet | À fleur de lignes',
 		seoDescription: defaultSiteSettings.siteDescription,
 		sortOrder: 4,
 		kind: 'standard',
@@ -140,7 +140,7 @@ export const defaultPages: PublishedPage[] = [
 			{
 				id: 'manuscript-list',
 				type: 'list',
-				eyebrow: 'Soumission',
+				eyebrow: 'Dossier',
 				title: 'Préparer un dossier clair.',
 				items: [
 					'Un synopsis d’une page',
@@ -189,7 +189,7 @@ export const defaultPages: PublishedPage[] = [
 						text: 'presse@afleurdelignes.fr'
 					}
 				],
-				ctaLabel: 'Soumettre un manuscrit',
+				ctaLabel: 'Déposer un projet',
 				targetSlug: 'soumission'
 			}
 		]

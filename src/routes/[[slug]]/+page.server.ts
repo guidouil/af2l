@@ -34,11 +34,10 @@ const legacySlugAliases: Record<string, string> = {
 function normalizeLegacyPublicStructure(book: PublishedBook): PublishedBook {
 	const slugs = new Set(book.pages.map((page) => page.slug));
 	const hasLegacyBookSite =
-		slugs.has('sommaire') &&
-		slugs.has('catalogue') &&
-		slugs.has('manuscrits') &&
-		!slugs.has('livres') &&
-		!slugs.has('soumission');
+		slugs.has('sommaire') ||
+		slugs.has('catalogue') ||
+		slugs.has('manuscrits') ||
+		book.pages.some((page) => page.slug === '' && page.kind === 'cover');
 
 	if (!hasLegacyBookSite) return book;
 

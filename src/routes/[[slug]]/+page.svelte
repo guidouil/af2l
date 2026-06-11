@@ -168,6 +168,19 @@
 		return index >= 0 ? index : 0;
 	}
 
+	function shouldShowEyebrow(label: string | undefined) {
+		if (!label) return false;
+		const normalizedLabel = normalizeLabel(label);
+		return (
+			normalizedLabel !== normalizeLabel(activePage.title) &&
+			normalizedLabel !== normalizeLabel(activePage.navLabel)
+		);
+	}
+
+	function normalizeLabel(label: string) {
+		return label.trim().toLocaleLowerCase('fr-FR');
+	}
+
 	function slugFromPath(pathname: string) {
 		const cleanPath = pathname.replace(/\/+$/, '');
 		const segment = cleanPath.split('/').filter(Boolean).at(-1) ?? '';
@@ -203,20 +216,6 @@
 			<span>{data.book.settings.siteName}</span>
 		</a>
 
-		<button
-			class="nav-toggle"
-			type="button"
-			aria-controls="site-navigation"
-			aria-expanded={navIsOpen}
-			aria-label="Ouvrir le menu"
-			title="Menu"
-			onclick={() => (navIsOpen = !navIsOpen)}
-		>
-			<span></span>
-			<span></span>
-			<span></span>
-		</button>
-
 		<nav id="site-navigation" class:open={navIsOpen} aria-label="Navigation principale">
 			<a
 				href={resolve('/')}
@@ -241,9 +240,27 @@
 			<a
 				class="header-cta"
 				href={resolve(`/${submissionPage.slug}`)}
-				onclick={() => (navIsOpen = false)}>Soumettre</a
+				aria-label="Déposer un projet"
+				onclick={() => (navIsOpen = false)}
 			>
+				<span class="cta-full">Déposer un projet</span>
+				<span class="cta-short">Déposer</span>
+			</a>
 		{/if}
+
+		<button
+			class="nav-toggle"
+			type="button"
+			aria-controls="site-navigation"
+			aria-expanded={navIsOpen}
+			aria-label="Ouvrir le menu"
+			title="Menu"
+			onclick={() => (navIsOpen = !navIsOpen)}
+		>
+			<span></span>
+			<span></span>
+			<span></span>
+		</button>
 	</header>
 
 	{#key activePage.id}
@@ -254,11 +271,16 @@
 		>
 			{#if activePage.slug === '' || activePage.kind === 'cover'}
 				<section class="home-hero">
-					<img
-						class="hero-image"
-						src={resolve('/assets/brand/editorial-hero.png')}
-						alt="Table de travail éditorial avec manuscrit, livres et papiers de couverture"
-					/>
+					<picture class="hero-image">
+						<source
+							srcset={resolve('/assets/brand/editorial-hero-dark.png')}
+							media="(prefers-color-scheme: dark)"
+						/>
+						<img
+							src={resolve('/assets/brand/editorial-hero.png')}
+							alt="Table de travail éditorial avec manuscrit, livres et papiers de couverture"
+						/>
+					</picture>
 					<div class="hero-overlay"></div>
 					<div class="hero-content">
 						{#each activePage.blocks as block (block.id)}
@@ -274,7 +296,9 @@
 				</section>
 			{:else}
 				<section class="page-heading">
-					<p class="eyebrow">{activePage.navLabel}</p>
+					{#if shouldShowEyebrow(activePage.navLabel)}
+						<p class="eyebrow">{activePage.navLabel}</p>
+					{/if}
 					<h1 id="page-title">{activePage.title}</h1>
 					{#if activePage.navNote}<p>{activePage.navNote}</p>{/if}
 				</section>
@@ -301,7 +325,7 @@
 {#snippet renderBlock(block: PageBlock)}
 	{#if block.type === 'hero'}
 		<section class="hero-block">
-			{#if block.eyebrow}<p class="eyebrow">{block.eyebrow}</p>{/if}
+			{#if shouldShowEyebrow(block.eyebrow)}<p class="eyebrow">{block.eyebrow}</p>{/if}
 			{#if activePage.slug === '' || activePage.kind === 'cover'}
 				<h1 id="page-title">{block.title}</h1>
 			{:else}
@@ -316,7 +340,7 @@
 		</section>
 	{:else if block.type === 'paragraphs'}
 		<section class="copy-block">
-			{#if block.eyebrow}<p class="eyebrow">{block.eyebrow}</p>{/if}
+			{#if shouldShowEyebrow(block.eyebrow)}<p class="eyebrow">{block.eyebrow}</p>{/if}
 			{#if block.title}<h2>{block.title}</h2>{/if}
 			<div class="copy-flow">
 				{#each block.paragraphs as paragraph (paragraph)}
@@ -326,7 +350,7 @@
 		</section>
 	{:else if block.type === 'list'}
 		<section class="copy-block list-block">
-			{#if block.eyebrow}<p class="eyebrow">{block.eyebrow}</p>{/if}
+			{#if shouldShowEyebrow(block.eyebrow)}<p class="eyebrow">{block.eyebrow}</p>{/if}
 			<h2>{block.title}</h2>
 			{#if block.intro}<p class="lead">{block.intro}</p>{/if}
 			<ol class="manuscript-list">
@@ -337,7 +361,7 @@
 		</section>
 	{:else if block.type === 'catalogueCards'}
 		<section class="copy-block catalogue-block">
-			{#if block.eyebrow}<p class="eyebrow">{block.eyebrow}</p>{/if}
+			{#if shouldShowEyebrow(block.eyebrow)}<p class="eyebrow">{block.eyebrow}</p>{/if}
 			<h2>{block.title}</h2>
 			<div class="book-grid">
 				{#each block.cards as card (card.title)}
@@ -365,7 +389,7 @@
 		</section>
 	{:else if block.type === 'contactLinks'}
 		<section class="copy-block contact-block">
-			{#if block.eyebrow}<p class="eyebrow">{block.eyebrow}</p>{/if}
+			{#if shouldShowEyebrow(block.eyebrow)}<p class="eyebrow">{block.eyebrow}</p>{/if}
 			<h2>{block.title}</h2>
 			<div class="contact-grid">
 				{#each block.links as link (link.href)}
@@ -395,7 +419,9 @@
 		<section class="pricing-inner">
 			<div class="pricing-header">
 				<div>
-					<p class="eyebrow">{block.eyebrow ?? 'Tarifs'}</p>
+					{#if shouldShowEyebrow(block.eyebrow ?? 'Tarifs')}
+						<p class="eyebrow">{block.eyebrow ?? 'Tarifs'}</p>
+					{/if}
 					<h2>{block.title}</h2>
 					<p class="lead">{block.lead}</p>
 				</div>
@@ -632,7 +658,6 @@
 	.brand img {
 		height: auto;
 		object-fit: contain;
-		/* border-radius: 50%; */
 	}
 
 	#site-navigation {
@@ -704,6 +729,10 @@
 		border-color: var(--clay);
 	}
 
+	.cta-short {
+		display: none;
+	}
+
 	.button-link--quiet {
 		background: transparent;
 		color: var(--sage-dark);
@@ -716,19 +745,22 @@
 
 	.nav-toggle {
 		display: none;
-		width: 2.75rem;
+		width: 2.25rem;
 		aspect-ratio: 1;
 		place-items: center;
-		border: 1px solid var(--line);
-		border-radius: 50%;
-		background: var(--surface);
+		align-content: center;
+		gap: 0.27rem;
+		border: 0;
+		border-radius: 0;
+		background: transparent;
 		color: var(--ink);
 		cursor: pointer;
+		padding: 0;
 	}
 
 	.nav-toggle span {
-		width: 1.1rem;
-		height: 1.5px;
+		width: 1.35rem;
+		height: 2px;
 		display: block;
 		background: currentColor;
 	}
@@ -785,6 +817,14 @@
 	}
 
 	.hero-image {
+		object-fit: cover;
+		object-position: center;
+	}
+
+	.hero-image img {
+		width: 100%;
+		height: 100%;
+		display: block;
 		object-fit: cover;
 		object-position: center;
 	}
@@ -1459,17 +1499,31 @@
 		}
 
 		.brand {
-			gap: 0.55rem;
-			font-size: 0.98rem;
+			gap: 0.5rem;
+			font-size: 0.92rem;
 		}
 
 		.brand picture,
 		.brand img {
-			width: 2.55rem;
+			width: 2.35rem;
 		}
 
 		.header-cta {
+			min-height: 2.35rem;
+			padding: 0.58rem 0.72rem;
+			font-size: 0.82rem;
+		}
+
+		.nav-toggle {
+			width: 2.05rem;
+		}
+
+		.cta-full {
 			display: none;
+		}
+
+		.cta-short {
+			display: inline;
 		}
 
 		#site-navigation {
@@ -1481,6 +1535,10 @@
 		}
 
 		.hero-image {
+			object-position: 62% center;
+		}
+
+		.hero-image img {
 			object-position: 62% center;
 		}
 
@@ -1517,6 +1575,36 @@
 
 		.site-footer nav {
 			justify-content: start;
+		}
+	}
+
+	@media (prefers-color-scheme: dark) {
+		.hero-overlay {
+			background:
+				linear-gradient(
+					90deg,
+					rgba(25, 25, 23, 0.96) 0%,
+					rgba(25, 25, 23, 0.82) 34%,
+					rgba(25, 25, 23, 0.34) 68%,
+					rgba(25, 25, 23, 0.08) 100%
+				),
+				linear-gradient(180deg, rgba(25, 25, 23, 0.1), rgba(25, 25, 23, 0.42));
+		}
+	}
+
+	@media (prefers-color-scheme: dark) and (max-width: 980px) {
+		.hero-overlay {
+			background:
+				linear-gradient(90deg, rgba(25, 25, 23, 0.94), rgba(25, 25, 23, 0.48)),
+				linear-gradient(180deg, rgba(25, 25, 23, 0.08), rgba(25, 25, 23, 0.68));
+		}
+	}
+
+	@media (prefers-color-scheme: dark) and (max-width: 640px) {
+		.hero-overlay {
+			background:
+				linear-gradient(180deg, rgba(25, 25, 23, 0.96), rgba(25, 25, 23, 0.62)),
+				linear-gradient(90deg, rgba(25, 25, 23, 0.94), rgba(25, 25, 23, 0.2));
 		}
 	}
 </style>
