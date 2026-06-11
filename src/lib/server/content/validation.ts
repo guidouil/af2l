@@ -1,4 +1,5 @@
 import type { PageBlock, PageKind, SiteSettings } from '$lib/content/types';
+import { getPageKindBlockErrors, isPageBlockType, isPageKind } from '$lib/content/page-types';
 import type { PricingConfig } from '$lib/pricing/types';
 
 export function normalizeSlug(slug: string) {
@@ -21,8 +22,7 @@ export function requireString(formData: FormData, key: string) {
 }
 
 export function parsePageKind(value: string): PageKind {
-	if (value === 'cover' || value === 'back_cover') return value;
-	return 'standard';
+	return isPageKind(value) ? value : 'standard';
 }
 
 export function parseBlocks(raw: string): PageBlock[] {
@@ -30,12 +30,22 @@ export function parseBlocks(raw: string): PageBlock[] {
 	if (!Array.isArray(parsed)) throw new Error('Les blocs doivent former un tableau.');
 
 	return parsed.map((block) => {
-		if (!isRecord(block) || typeof block.id !== 'string' || typeof block.type !== 'string') {
+		if (
+			!isRecord(block) ||
+			typeof block.id !== 'string' ||
+			typeof block.type !== 'string' ||
+			!isPageBlockType(block.type)
+		) {
 			throw new Error('Un bloc est invalide.');
 		}
 
 		return block as PageBlock;
 	});
+}
+
+export function validateBlocksForPageKind(kind: PageKind, blocks: PageBlock[]) {
+	const errors = getPageKindBlockErrors(kind, blocks);
+	if (errors.length > 0) throw new Error(errors.join(' '));
 }
 
 export function parseSiteSettings(raw: string): SiteSettings {

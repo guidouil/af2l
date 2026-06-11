@@ -157,8 +157,15 @@
 
 	function pageTone(page: PublishedPage) {
 		if (page.slug === '' || page.kind === 'cover') return 'home';
-		if (page.blocks.some((block) => block.type === 'pricingConfigurator')) return 'pricing';
-		if (page.blocks.some((block) => block.type === 'catalogueCards')) return 'books';
+		if (
+			page.kind === 'pricing' ||
+			page.blocks.some((block) => block.type === 'pricingConfigurator')
+		) {
+			return 'pricing';
+		}
+		if (page.kind === 'catalogue' || page.blocks.some((block) => block.type === 'catalogueCards')) {
+			return 'books';
+		}
 		return 'content';
 	}
 

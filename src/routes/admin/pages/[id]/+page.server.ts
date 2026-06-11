@@ -12,7 +12,8 @@ import {
 	parseBlocks,
 	parseBoolean,
 	parsePageKind,
-	requireString
+	requireString,
+	validateBlocksForPageKind
 } from '$lib/server/content/validation';
 
 export const load: PageServerLoad = async ({ params }) => {
@@ -32,16 +33,20 @@ export const actions: Actions = {
 		const slug = normalizeSlug(requireString(formData, 'slug'));
 
 		try {
+			const kind = parsePageKind(requireString(formData, 'kind'));
+			const blocks = parseBlocks(requireString(formData, 'blocks'));
+			validateBlocksForPageKind(kind, blocks);
+
 			await updateContentPageDraft(id, {
 				slug,
-				kind: parsePageKind(requireString(formData, 'kind')),
+				kind,
 				showInNav: parseBoolean(formData.get('showInNav')),
 				title: requireString(formData, 'title'),
 				navLabel: requireString(formData, 'navLabel'),
 				navNote: requireString(formData, 'navNote'),
 				seoTitle: requireString(formData, 'seoTitle'),
 				seoDescription: requireString(formData, 'seoDescription'),
-				blocks: parseBlocks(requireString(formData, 'blocks'))
+				blocks
 			});
 
 			return { message: 'Brouillon enregistré.' };

@@ -64,6 +64,25 @@
 			<a href={resolve('/admin/settings')}>Paramètres SEO</a>
 		</div>
 	</section>
+
+	<section class="panel danger-zone">
+		<div class="panel-inner section-title">
+			<div>
+				<h2>Réinitialisation</h2>
+				<p class="muted">
+					Remet les pages, les paramètres SEO et les tarifs aux valeurs par défaut. Les médias et
+					les comptes admin sont conservés.
+				</p>
+			</div>
+		</div>
+		<form method="POST" action="?/reset" class="reset-form">
+			<label>
+				Confirmation
+				<input name="confirmation" autocomplete="off" placeholder="RESET" />
+			</label>
+			<button class="danger" type="submit">Réinitialiser les données</button>
+		</form>
+	</section>
 </section>
 
 <style>
@@ -125,9 +144,22 @@
 		background: #f8f3e7;
 	}
 
+	.danger-zone {
+		border-color: #d7a2a6;
+	}
+
+	.reset-form {
+		display: grid;
+		grid-template-columns: minmax(12rem, 1fr) auto;
+		gap: 1rem;
+		align-items: end;
+		padding: 1rem;
+	}
+
 	@media (max-width: 880px) {
 		.stats,
-		.quick-actions {
+		.quick-actions,
+		.reset-form {
 			grid-template-columns: 1fr;
 		}
 

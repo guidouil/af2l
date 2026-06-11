@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import { getPageKindDefinition, pageKindDefinitions } from '$lib/content/page-types';
 
 	let { data, form } = $props();
 </script>
@@ -33,6 +34,14 @@
 					<input name="slug" placeholder="nouvelle-page" />
 				</label>
 				<label>
+					Type de page
+					<select name="kind">
+						{#each pageKindDefinitions as definition (definition.value)}
+							<option value={definition.value}>{definition.label}</option>
+						{/each}
+					</select>
+				</label>
+				<label>
 					Libellé navigation
 					<input name="navLabel" />
 				</label>
@@ -61,7 +70,7 @@
 					<div>
 						<h2>{item.draft?.title ?? item.published?.title ?? (item.slug || 'Couverture')}</h2>
 						<p class="muted">
-							/{item.slug || 'accueil'} · {item.kind} · {item.showInNav
+							/{item.slug || 'accueil'} · {getPageKindDefinition(item.kind).label} · {item.showInNav
 								? 'dans le sommaire'
 								: 'hors sommaire'}
 						</p>

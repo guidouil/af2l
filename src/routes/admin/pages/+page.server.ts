@@ -7,7 +7,7 @@ import {
 	moveContentPage,
 	publishContentPage
 } from '$lib/server/content';
-import { normalizeSlug, requireString } from '$lib/server/content/validation';
+import { normalizeSlug, parsePageKind, requireString } from '$lib/server/content/validation';
 
 export const load: PageServerLoad = async () => ({
 	pages: await getAdminPages()
@@ -19,6 +19,7 @@ export const actions: Actions = {
 		const title = requireString(formData, 'title');
 		const navLabel = requireString(formData, 'navLabel') || title;
 		const slug = normalizeSlug(requireString(formData, 'slug') || title);
+		const kind = parsePageKind(requireString(formData, 'kind'));
 
 		if (!title || !slug) return fail(400, { message: 'Titre et slug sont requis.' });
 
@@ -27,6 +28,7 @@ export const actions: Actions = {
 				title,
 				navLabel,
 				slug,
+				kind,
 				navNote: requireString(formData, 'navNote'),
 				seoTitle: requireString(formData, 'seoTitle') || title,
 				seoDescription: requireString(formData, 'seoDescription')

@@ -19,7 +19,7 @@ export const defaultPages: PublishedPage[] = [
 		seoTitle: 'À fleur de lignes',
 		seoDescription: defaultSiteSettings.siteDescription,
 		sortOrder: 0,
-		kind: 'standard',
+		kind: 'cover',
 		showInNav: false,
 		isSystem: true,
 		blocks: [
@@ -72,7 +72,7 @@ export const defaultPages: PublishedPage[] = [
 		seoTitle: 'Livres | À fleur de lignes',
 		seoDescription: defaultSiteSettings.siteDescription,
 		sortOrder: 2,
-		kind: 'standard',
+		kind: 'catalogue',
 		showInNav: true,
 		isSystem: false,
 		blocks: [
@@ -111,7 +111,7 @@ export const defaultPages: PublishedPage[] = [
 		seoTitle: 'Tarifs | À fleur de lignes',
 		seoDescription: defaultSiteSettings.siteDescription,
 		sortOrder: 3,
-		kind: 'standard',
+		kind: 'pricing',
 		showInNav: true,
 		isSystem: false,
 		blocks: [
@@ -163,7 +163,7 @@ export const defaultPages: PublishedPage[] = [
 		seoTitle: 'Contact | À fleur de lignes',
 		seoDescription: defaultSiteSettings.siteDescription,
 		sortOrder: 5,
-		kind: 'standard',
+		kind: 'contact',
 		showInNav: true,
 		isSystem: false,
 		blocks: [

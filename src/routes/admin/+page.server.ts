@@ -1,7 +1,8 @@
 import { fail } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
-import { getAdminPages, seedDefaultContent } from '$lib/server/content';
+import { getAdminPages, resetDefaultContent, seedDefaultContent } from '$lib/server/content';
 import { listMediaAssets } from '$lib/server/media';
+import { requireString } from '$lib/server/content/validation';
 
 export const load: PageServerLoad = async () => {
 	const [pages, media] = await Promise.all([getAdminPages(), listMediaAssets()]);
@@ -21,6 +22,21 @@ export const actions: Actions = {
 			return { message: created ? 'Contenu initial créé.' : 'Le contenu existe déjà.' };
 		} catch (error) {
 			return fail(400, { message: error instanceof Error ? error.message : 'Seed impossible.' });
+		}
+	},
+	reset: async ({ request }) => {
+		const formData = await request.formData();
+		if (requireString(formData, 'confirmation') !== 'RESET') {
+			return fail(400, { message: 'Tapez RESET pour confirmer la réinitialisation.' });
+		}
+
+		try {
+			await resetDefaultContent();
+			return { message: 'Pages, paramètres et tarifs réinitialisés.' };
+		} catch (error) {
+			return fail(400, {
+				message: error instanceof Error ? error.message : 'Réinitialisation impossible.'
+			});
 		}
 	}
 };

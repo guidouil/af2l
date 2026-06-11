@@ -1,44 +1,44 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import { untrack } from 'svelte';
-	import type { PageBlock } from '$lib/content/types';
+	import {
+		blockTypeDefinitions,
+		createEmptyBlock,
+		getBlockTypeLabel,
+		getPageKindDefinition,
+		isBlockAllowedForPageKind,
+		pageKindDefinitions,
+		type PageBlockType
+	} from '$lib/content/page-types';
+	import type { PageBlock, PageKind } from '$lib/content/types';
 
 	let { data, form } = $props();
 
+	let selectedKind = $state<PageKind>(untrack(() => data.page.kind));
 	let blocks = $state<PageBlock[]>(untrack(() => structuredClone(data.page.draft?.blocks ?? [])));
 	let serializedBlocks = $derived(JSON.stringify(blocks));
+	let selectedKindDefinition = $derived(getPageKindDefinition(selectedKind));
+	let availableBlockTypes = $derived(
+		blockTypeDefinitions.filter((definition) => isAllowedBlockType(definition.value))
+	);
+	let incompatibleBlocks = $derived(blocks.filter((block) => !isAllowedBlockType(block.type)));
 
-	const blockTypes: { value: PageBlock['type']; label: string }[] = [
-		{ value: 'hero', label: 'Hero' },
-		{ value: 'paragraphs', label: 'Paragraphes' },
-		{ value: 'list', label: 'Liste' },
-		{ value: 'catalogueCards', label: 'Catalogue' },
-		{ value: 'contactLinks', label: 'Contacts' },
-		{ value: 'pricingConfigurator', label: 'Configurateur tarifs' },
-		{ value: 'image', label: 'Image' },
-		{ value: 'cta', label: 'Bouton' }
-	];
-
-	function createBlock(type: PageBlock['type']): PageBlock {
-		const id = `${type}-${crypto.randomUUID()}`;
-		if (type === 'hero')
-			return { id, type, title: 'Titre', body: '', buttonLabel: '', targetSlug: '' };
-		if (type === 'paragraphs') return { id, type, title: 'Titre', paragraphs: ['Nouveau texte.'] };
-		if (type === 'list') return { id, type, title: 'Liste', items: ['Premier élément'] };
-		if (type === 'catalogueCards') return { id, type, title: 'Catalogue', cards: [] };
-		if (type === 'contactLinks') return { id, type, title: 'Contacts', links: [] };
-		if (type === 'pricingConfigurator')
-			return { id, type, title: 'Configurateur de prix', lead: '' };
-		if (type === 'image') return { id, type, alt: '', caption: '' };
-		return { id, type, label: 'Lire la suite', targetSlug: '' };
+	function createBlock(type: PageBlockType): PageBlock {
+		return createEmptyBlock(type, `${type}-${crypto.randomUUID()}`);
 	}
 
-	function addBlock(type: PageBlock['type']) {
+	function addBlock(type: PageBlockType) {
+		if (!isAllowedBlockType(type)) return;
 		blocks = [...blocks, createBlock(type)];
 	}
 
-	function changeBlockType(index: number, type: PageBlock['type']) {
+	function changeBlockType(index: number, type: PageBlockType) {
+		if (!isAllowedBlockType(type)) return;
 		blocks[index] = createBlock(type);
+	}
+
+	function isAllowedBlockType(type: PageBlockType) {
+		return isBlockAllowedForPageKind(selectedKind, type);
 	}
 
 	function moveBlock(index: number, direction: -1 | 1) {
@@ -132,12 +132,20 @@
 				</label>
 				<label>
 					Type de page
-					<select name="kind" value={data.page.kind}>
-						<option value="standard">Page standard</option>
-						<option value="cover">Couverture</option>
-						<option value="back_cover">Dos</option>
+					<select name="kind" bind:value={selectedKind}>
+						{#each pageKindDefinitions as definition (definition.value)}
+							<option value={definition.value}>{definition.label}</option>
+						{/each}
 					</select>
 				</label>
+				<div class="type-details wide">
+					<p>{selectedKindDefinition.description}</p>
+					<div>
+						{#each selectedKindDefinition.allowedBlockTypes as blockType (blockType)}
+							<span>{getBlockTypeLabel(blockType)}</span>
+						{/each}
+					</div>
+				</div>
 				<label class="checkbox">
 					<input name="showInNav" type="checkbox" checked={data.page.showInNav} />
 					Afficher dans le sommaire
@@ -175,10 +183,10 @@
 			<div class="panel-inner blocks-header">
 				<div>
 					<h2>Blocs</h2>
-					<p class="muted">Chaque bloc correspond à un rendu connu du livre public.</p>
+					<p class="muted">Les blocs disponibles dépendent du type de page sélectionné.</p>
 				</div>
 				<div class="add-block">
-					{#each blockTypes as type (type.value)}
+					{#each availableBlockTypes as type (type.value)}
 						<button class="secondary" type="button" onclick={() => addBlock(type.value)}>
 							+ {type.label}
 						</button>
@@ -186,19 +194,37 @@
 				</div>
 			</div>
 
+			{#if incompatibleBlocks.length > 0}
+				<div class="block-warning">
+					<p>
+						{incompatibleBlocks.length} bloc{incompatibleBlocks.length > 1 ? 's' : ''} ne correspond{incompatibleBlocks.length >
+						1
+							? 'ent'
+							: ''} pas au type
+						{selectedKindDefinition.label}. Supprimez-les ou choisissez un autre type avant
+						d’enregistrer.
+					</p>
+				</div>
+			{/if}
+
 			<div class="blocks">
 				{#each blocks as block, index (block.id)}
-					<article>
+					<article class:incompatible={!isAllowedBlockType(block.type)}>
 						<header>
 							<select
 								value={block.type}
 								onchange={(event) =>
-									changeBlockType(index, event.currentTarget.value as PageBlock['type'])}
+									changeBlockType(index, event.currentTarget.value as PageBlockType)}
 							>
-								{#each blockTypes as type (type.value)}
-									<option value={type.value}>{type.label}</option>
+								{#each blockTypeDefinitions as type (type.value)}
+									<option value={type.value} disabled={!isAllowedBlockType(type.value)}>
+										{type.label}
+									</option>
 								{/each}
 							</select>
+							{#if !isAllowedBlockType(block.type)}
+								<span class="incompatible-badge">Hors type</span>
+							{/if}
 							<div>
 								<button
 									class="secondary"
@@ -355,6 +381,37 @@
 		width: auto;
 	}
 
+	.type-details {
+		display: grid;
+		gap: 0.55rem;
+		padding: 0.75rem;
+		border: 1px solid #ded6c8;
+		border-radius: 6px;
+		background: #f8f3e7;
+	}
+
+	.type-details p {
+		margin: 0;
+		color: #514b42;
+	}
+
+	.type-details div {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.4rem;
+	}
+
+	.type-details span,
+	.incompatible-badge {
+		border: 1px solid #d8d0c3;
+		border-radius: 999px;
+		padding: 0.18rem 0.5rem;
+		background: #fffdf8;
+		color: #70695e;
+		font-size: 0.78rem;
+		font-weight: 700;
+	}
+
 	.wide {
 		grid-column: 1 / -1;
 	}
@@ -375,11 +432,26 @@
 		display: grid;
 	}
 
+	.block-warning {
+		border-bottom: 1px solid #e6c5a0;
+		padding: 0.8rem 1rem;
+		background: #fff7e8;
+		color: #5a3a11;
+	}
+
+	.block-warning p {
+		margin: 0;
+	}
+
 	.blocks article {
 		display: grid;
 		gap: 1rem;
 		padding: 1rem;
 		border-bottom: 1px solid #ded6c8;
+	}
+
+	.blocks article.incompatible {
+		background: #fff7e8;
 	}
 
 	.blocks article:last-child {
@@ -388,8 +460,15 @@
 
 	.blocks header {
 		display: flex;
+		align-items: center;
 		justify-content: space-between;
 		gap: 1rem;
+	}
+
+	.incompatible-badge {
+		border-color: #d79a63;
+		background: #fff3df;
+		color: #77420e;
 	}
 
 	.blocks header div {

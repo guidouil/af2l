@@ -1,4 +1,4 @@
-export type PageKind = 'cover' | 'standard' | 'back_cover';
+export type PageKind = 'cover' | 'standard' | 'catalogue' | 'pricing' | 'contact' | 'back_cover';
 
 export type HeroBlock = {
 	id: string;

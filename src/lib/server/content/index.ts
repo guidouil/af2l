@@ -1,8 +1,15 @@
 import { and, asc, desc, eq, max, ne } from 'drizzle-orm';
 import { defaultBook, defaultPages, defaultSiteSettings } from '$lib/content/defaults';
+import {
+	createEmptyBlock,
+	getPageKindBlockErrors,
+	getPageKindDefinition,
+	normalizePageKind
+} from '$lib/content/page-types';
 import type {
 	ContentStatus,
 	PageBlock,
+	PageKind,
 	PublishedBook,
 	PublishedPage,
 	SiteSettings
@@ -70,16 +77,21 @@ export async function getAdminPages(): Promise<AdminPageSummary[]> {
 		});
 	}
 
-	return pages.map((page) => ({
-		id: page.id,
-		slug: page.slug,
-		sortOrder: page.sortOrder,
-		kind: page.kind,
-		showInNav: page.showInNav,
-		isSystem: page.isSystem,
-		draft: versionMap.get(`${page.id}:draft`) ?? null,
-		published: versionMap.get(`${page.id}:published`) ?? null
-	}));
+	return pages.map((page) => {
+		const draft = versionMap.get(`${page.id}:draft`) ?? null;
+		const published = versionMap.get(`${page.id}:published`) ?? null;
+
+		return {
+			id: page.id,
+			slug: page.slug,
+			sortOrder: page.sortOrder,
+			kind: normalizePageKind(page.kind, page.slug, draft?.blocks ?? published?.blocks ?? []),
+			showInNav: page.showInNav,
+			isSystem: page.isSystem,
+			draft,
+			published
+		};
+	});
 }
 
 export async function getAdminPage(id: number) {
@@ -97,7 +109,7 @@ export async function getAdminPage(id: number) {
 		id: page.id,
 		slug: page.slug,
 		sortOrder: page.sortOrder,
-		kind: page.kind,
+		kind: normalizePageKind(page.kind, page.slug, draft?.blocks ?? published?.blocks ?? []),
 		showInNav: page.showInNav,
 		isSystem: page.isSystem,
 		draft: draft ? toPageVersion(draft) : null,
@@ -108,6 +120,7 @@ export async function getAdminPage(id: number) {
 export async function createContentPage(input: {
 	title: string;
 	slug: string;
+	kind: PageKind;
 	navLabel: string;
 	navNote: string;
 	seoTitle: string;
@@ -122,6 +135,7 @@ export async function createContentPage(input: {
 
 	const [orderRow] = await db.select({ maxOrder: max(contentPages.sortOrder) }).from(contentPages);
 	const sortOrder = (orderRow.maxOrder ?? -1) + 1;
+	const pageKind = getPageKindDefinition(input.kind);
 
 	return db.transaction(async (tx) => {
 		const [page] = await tx
@@ -129,8 +143,8 @@ export async function createContentPage(input: {
 			.values({
 				slug: input.slug,
 				sortOrder,
-				kind: 'standard',
-				showInNav: true,
+				kind: input.kind,
+				showInNav: pageKind.defaultShowInNav,
 				isSystem: false
 			})
 			.returning();
@@ -143,15 +157,7 @@ export async function createContentPage(input: {
 			navNote: input.navNote,
 			seoTitle: input.seoTitle,
 			seoDescription: input.seoDescription,
-			blocks: [
-				{
-					id: `paragraphs-${Date.now()}`,
-					type: 'paragraphs',
-					eyebrow: input.navLabel,
-					title: input.title,
-					paragraphs: ['Nouveau contenu à compléter.']
-				}
-			]
+			blocks: [createInitialPageBlock(input.kind, input.title, input.navLabel)]
 		});
 
 		return page;
@@ -172,6 +178,9 @@ export async function updateContentPageDraft(
 		blocks: PageBlock[];
 	}
 ) {
+	const blockErrors = getPageKindBlockErrors(input.kind, input.blocks);
+	if (blockErrors.length > 0) throw new Error(blockErrors.join(' '));
+
 	const [duplicate] = await db
 		.select()
 		.from(contentPages)
@@ -340,45 +349,21 @@ export async function seedDefaultContent() {
 	if (existingPage) return false;
 
 	await db.transaction(async (tx) => {
-		for (const page of defaultPages) {
-			const [inserted] = await tx
-				.insert(contentPages)
-				.values({
-					slug: page.slug,
-					sortOrder: page.sortOrder,
-					kind: page.kind,
-					showInNav: page.showInNav,
-					isSystem: page.isSystem
-				})
-				.returning();
-
-			const version = {
-				pageId: inserted.id,
-				title: page.title,
-				navLabel: page.navLabel,
-				navNote: page.navNote,
-				seoTitle: page.seoTitle,
-				seoDescription: page.seoDescription,
-				blocks: page.blocks
-			};
-
-			await tx.insert(contentPageVersions).values([
-				{ ...version, status: 'draft' },
-				{ ...version, status: 'published' }
-			]);
-		}
-
-		await tx.insert(siteSettingsVersions).values([
-			{ status: 'draft', settings: defaultSiteSettings },
-			{ status: 'published', settings: defaultSiteSettings }
-		]);
-		await tx.insert(pricingConfigVersions).values([
-			{ status: 'draft', config: defaultPricingConfig },
-			{ status: 'published', config: defaultPricingConfig }
-		]);
+		await insertDefaultContent(tx);
 	});
 
 	return true;
+}
+
+export async function resetDefaultContent() {
+	await db.transaction(async (tx) => {
+		await tx.delete(contentPageVersions);
+		await tx.delete(contentPages);
+		await tx.delete(siteSettingsVersions);
+		await tx.delete(pricingConfigVersions);
+
+		await insertDefaultContent(tx);
+	});
 }
 
 async function getBookByStatus(
@@ -408,7 +393,7 @@ async function getBookByStatus(
 			seoTitle: version.seoTitle,
 			seoDescription: version.seoDescription,
 			sortOrder: page.sortOrder,
-			kind: page.kind,
+			kind: normalizePageKind(page.kind, page.slug, version.blocks),
 			showInNav: page.showInNav,
 			isSystem: page.isSystem,
 			blocks: version.blocks
@@ -462,4 +447,63 @@ function toPageVersion(version: typeof contentPageVersions.$inferSelect): PageVe
 		blocks: version.blocks,
 		updatedAt: version.updatedAt
 	};
+}
+
+type ContentTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+async function insertDefaultContent(tx: ContentTransaction) {
+	for (const page of defaultPages) {
+		const [inserted] = await tx
+			.insert(contentPages)
+			.values({
+				slug: page.slug,
+				sortOrder: page.sortOrder,
+				kind: page.kind,
+				showInNav: page.showInNav,
+				isSystem: page.isSystem
+			})
+			.returning();
+
+		const version = {
+			pageId: inserted.id,
+			title: page.title,
+			navLabel: page.navLabel,
+			navNote: page.navNote,
+			seoTitle: page.seoTitle,
+			seoDescription: page.seoDescription,
+			blocks: page.blocks
+		};
+
+		await tx.insert(contentPageVersions).values([
+			{ ...version, status: 'draft' },
+			{ ...version, status: 'published' }
+		]);
+	}
+
+	await tx.insert(siteSettingsVersions).values([
+		{ status: 'draft', settings: defaultSiteSettings },
+		{ status: 'published', settings: defaultSiteSettings }
+	]);
+	await tx.insert(pricingConfigVersions).values([
+		{ status: 'draft', config: defaultPricingConfig },
+		{ status: 'published', config: defaultPricingConfig }
+	]);
+}
+
+function createInitialPageBlock(kind: PageKind, title: string, navLabel: string): PageBlock {
+	const definition = getPageKindDefinition(kind);
+	const block = createEmptyBlock(
+		definition.starterBlockType,
+		`${definition.starterBlockType}-${Date.now()}`,
+		title
+	);
+
+	if ('eyebrow' in block) block.eyebrow = navLabel;
+	if (block.type === 'pricingConfigurator') {
+		block.title = 'Configurateur de prix';
+		block.lead =
+			'Sélectionnez les prestations dont vous avez besoin. Le calcul donne une estimation personnalisée, sans engagement.';
+	}
+
+	return block;
 }
