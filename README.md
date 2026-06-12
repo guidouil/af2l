@@ -123,6 +123,24 @@ canonique avant d'afficher l'admin. Le fichier `/etc/af2l/af2l.env` doit donc co
 ORIGIN=https://afleurdelignes.com
 ```
 
+### Notifications email des depots de projet
+
+Chaque depot de projet enregistre dans l'admin peut envoyer une notification a
+`editions@afleurdelignes.com`. Configurer le SMTP dans `/etc/af2l/af2l.env` :
+
+```sh
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_USER=contact@example.com
+SMTP_PASSWORD=mot-de-passe-smtp
+SMTP_FROM="A fleur de lignes <editions@afleurdelignes.com>"
+PROJECT_SUBMISSION_NOTIFICATION_TO=editions@afleurdelignes.com
+```
+
+Si `SMTP_HOST` n'est pas defini, le depot reste enregistre dans l'admin mais aucun email
+n'est envoye.
+
 Apres modification du service :
 
 ```sh

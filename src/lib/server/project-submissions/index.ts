@@ -5,6 +5,7 @@ import { desc, eq, inArray } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import { projectSubmissionFiles, projectSubmissions } from '$lib/server/db/schema';
 import { uploadDirectory } from '$lib/server/media';
+import { sendProjectSubmissionNotification } from './notifications';
 
 export const maxProjectFileBytes = 10 * 1024 * 1024;
 
@@ -52,9 +53,10 @@ export async function createProjectSubmission(formData: FormData) {
 	}
 
 	const storedFiles = await storeProjectFiles(files);
+	let createdSubmission: typeof projectSubmissions.$inferSelect;
 
 	try {
-		await db.transaction(async (tx) => {
+		createdSubmission = await db.transaction(async (tx) => {
 			const [submission] = await tx
 				.insert(projectSubmissions)
 				.values({ fullName, email, message })
@@ -66,10 +68,24 @@ export async function createProjectSubmission(formData: FormData) {
 					...file
 				}))
 			);
+
+			return submission;
 		});
 	} catch (error) {
 		await Promise.all(storedFiles.map((file) => rm(file.storagePath, { force: true })));
 		throw error;
+	}
+
+	try {
+		await sendProjectSubmissionNotification({
+			id: createdSubmission.id,
+			fullName: createdSubmission.fullName,
+			email: createdSubmission.email,
+			message: createdSubmission.message,
+			files: storedFiles
+		});
+	} catch (error) {
+		console.error('Project submission notification email failed.', error);
 	}
 }
 
