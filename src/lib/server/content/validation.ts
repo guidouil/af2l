@@ -1,5 +1,6 @@
 import type { PageBlock, PageKind, SiteSettings } from '$lib/content/types';
 import { getPageKindBlockErrors, isPageBlockType, isPageKind } from '$lib/content/page-types';
+import { defaultPricingConfig } from '$lib/pricing/defaults';
 import type { PricingConfig } from '$lib/pricing/types';
 
 export function normalizeSlug(slug: string) {
@@ -65,7 +66,20 @@ export function parsePricingConfig(raw: string): PricingConfig {
 	const parsed = JSON.parse(raw) as unknown;
 	if (!isRecord(parsed)) throw new Error('La configuration tarifaire est invalide.');
 
-	return parsed as PricingConfig;
+	const config = parsed as PricingConfig;
+	const hasIsbnRule = config.rules.some((rule) => rule.id === 'isbn');
+
+	return {
+		...config,
+		defaults: {
+			...defaultPricingConfig.defaults,
+			...config.defaults
+		},
+		isbnOptions: config.isbnOptions ?? defaultPricingConfig.isbnOptions,
+		rules: hasIsbnRule
+			? config.rules
+			: [...config.rules, ...defaultPricingConfig.rules.filter((rule) => rule.id === 'isbn')]
+	};
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -2,6 +2,7 @@ export type ProjectType = 'paper' | 'epub' | 'paper-epub';
 export type BookCategory = 'fiction' | 'essay' | 'illustrated' | 'youth' | 'poetry' | 'art-book';
 export type CoverOption = 'ready-pdf' | 'supplied-illustration' | 'full-creation';
 export type PublicationOption = 'kdp' | 'bod' | 'kdp-bod' | 'none';
+export type IsbnOption = 'provided' | 'afleurdelignes';
 export type VolumeInput = 'pages' | 'signs';
 
 export type PricingCondition =
@@ -26,7 +27,8 @@ export type PricingBreakdownKey =
 	| 'index'
 	| 'cover'
 	| 'epub'
-	| 'publication';
+	| 'publication'
+	| 'isbn';
 
 export type PricingSelectOption<T extends string = string> = {
 	value: T;
@@ -66,8 +68,8 @@ export type PricingRule =
 			label: string;
 			key: PricingBreakdownKey;
 			type: 'flat_option_price';
-			input: 'coverOption' | 'publicationOption';
-			optionGroup: 'coverOptions' | 'publicationOptions';
+			input: 'coverOption' | 'publicationOption' | 'isbnOption';
+			optionGroup: 'coverOptions' | 'publicationOptions' | 'isbnOptions';
 	  }
 	| {
 			id: string;
@@ -99,6 +101,7 @@ export type PricingInput = {
 	hasSummary: boolean;
 	tableCount: number;
 	publicationOption: PublicationOption;
+	isbnOption: IsbnOption;
 };
 
 export type PricingConfig = {
@@ -108,6 +111,7 @@ export type PricingConfig = {
 	bookCategories: PricingSelectOption<BookCategory>[];
 	coverOptions: PricingSelectOption<CoverOption>[];
 	publicationOptions: PricingSelectOption<PublicationOption>[];
+	isbnOptions: PricingSelectOption<IsbnOption>[];
 	rules: PricingRule[];
 };
 

@@ -16,7 +16,8 @@ export const defaultPricingConfig: PricingConfig = {
 		hasComplexIndex: false,
 		hasSummary: true,
 		tableCount: 0,
-		publicationOption: 'none'
+		publicationOption: 'none',
+		isbnOption: 'provided'
 	},
 	projectTypes: [
 		{ value: 'paper', label: 'Livre papier' },
@@ -41,6 +42,10 @@ export const defaultPricingConfig: PricingConfig = {
 		{ value: 'bod', label: 'BoD', price: 99 },
 		{ value: 'kdp-bod', label: 'KDP + BoD', price: 149 },
 		{ value: 'none', label: 'Pas de publication', price: 0 }
+	],
+	isbnOptions: [
+		{ value: 'provided', label: 'ISBN fourni par l’auteur', price: 0 },
+		{ value: 'afleurdelignes', label: 'ISBN fourni par À fleur de lignes', price: 35 }
 	],
 	rules: [
 		{
@@ -122,6 +127,14 @@ export const defaultPricingConfig: PricingConfig = {
 			type: 'flat_option_price',
 			input: 'publicationOption',
 			optionGroup: 'publicationOptions'
+		},
+		{
+			id: 'isbn',
+			label: 'ISBN',
+			key: 'isbn',
+			type: 'flat_option_price',
+			input: 'isbnOption',
+			optionGroup: 'isbnOptions'
 		},
 		{
 			id: 'art-book-quote',

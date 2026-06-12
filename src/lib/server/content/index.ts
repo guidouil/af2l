@@ -330,7 +330,7 @@ export async function getPricingConfig(status: ContentStatus = 'published') {
 		.orderBy(desc(pricingConfigVersions.updatedAt))
 		.limit(1);
 
-	if (version) return version.config;
+	if (version) return normalizePricingConfig(version.config);
 	if (status === 'draft') return getPricingConfig('published');
 	return defaultPricingConfig;
 }
@@ -433,6 +433,22 @@ async function upsertPricingConfig(status: ContentStatus, config: PricingConfig)
 	} else {
 		await db.insert(pricingConfigVersions).values({ status, config });
 	}
+}
+
+function normalizePricingConfig(config: PricingConfig): PricingConfig {
+	const hasIsbnRule = config.rules.some((rule) => rule.id === 'isbn');
+
+	return {
+		...config,
+		defaults: {
+			...defaultPricingConfig.defaults,
+			...config.defaults
+		},
+		isbnOptions: config.isbnOptions ?? defaultPricingConfig.isbnOptions,
+		rules: hasIsbnRule
+			? config.rules
+			: [...config.rules, ...defaultPricingConfig.rules.filter((rule) => rule.id === 'isbn')]
+	};
 }
 
 function toPageVersion(version: typeof contentPageVersions.$inferSelect): PageVersion {

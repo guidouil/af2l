@@ -30,4 +30,20 @@ describe('calculatePricing', () => {
 			}).requiresQuote
 		).toBe(true);
 	});
+
+	it('adds the ISBN price when À fleur de lignes provides it', () => {
+		expect.assertions(2);
+
+		const result = calculatePricing(defaultPricingConfig, {
+			...defaultPricingConfig.defaults,
+			isbnOption: 'afleurdelignes'
+		});
+
+		expect(result.total).toBe(485);
+		expect(result.breakdown).toContainEqual({
+			key: 'isbn',
+			label: 'ISBN',
+			amount: 35
+		});
+	});
 });

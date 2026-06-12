@@ -44,8 +44,15 @@
 		'index',
 		'cover',
 		'epub',
-		'publication'
+		'publication',
+		'isbn'
 	];
+
+	const optionInputs = [
+		{ input: 'coverOption', optionGroup: 'coverOptions', label: 'Couvertures' },
+		{ input: 'publicationOption', optionGroup: 'publicationOptions', label: 'Publication' },
+		{ input: 'isbnOption', optionGroup: 'isbnOptions', label: 'ISBN' }
+	] as const;
 
 	function addRule(type: PricingRule['type']) {
 		const id = `${type}-${crypto.randomUUID()}`;
@@ -105,7 +112,7 @@
 	}
 
 	function addOption(
-		group: 'projectTypes' | 'bookCategories' | 'coverOptions' | 'publicationOptions'
+		group: 'projectTypes' | 'bookCategories' | 'coverOptions' | 'publicationOptions' | 'isbnOptions'
 	) {
 		const next = [
 			...(config[group] as { value: string; label: string; price?: number }[]),
@@ -115,7 +122,12 @@
 	}
 
 	function deleteOption(
-		group: 'projectTypes' | 'bookCategories' | 'coverOptions' | 'publicationOptions',
+		group:
+			| 'projectTypes'
+			| 'bookCategories'
+			| 'coverOptions'
+			| 'publicationOptions'
+			| 'isbnOptions',
 		index: number
 	) {
 		const next = (config[group] as { value: string; label: string; price?: number }[]).filter(
@@ -204,6 +216,7 @@
 				{@render OptionEditor('Catégories', 'bookCategories')}
 				{@render OptionEditor('Couvertures', 'coverOptions', true)}
 				{@render OptionEditor('Publication', 'publicationOptions', true)}
+				{@render OptionEditor('ISBN', 'isbnOptions', true)}
 			</div>
 		</section>
 
@@ -221,6 +234,9 @@
 						>Quantité</button
 					>
 					<button class="secondary" type="button" onclick={() => addRule('flat_if')}>Forfait</button
+					>
+					<button class="secondary" type="button" onclick={() => addRule('flat_option_price')}
+						>Option</button
 					>
 					<button class="secondary" type="button" onclick={() => addRule('range_by_pages_if')}
 						>Paliers</button
@@ -286,8 +302,17 @@
 								<label>
 									Groupe d’options
 									<select bind:value={rule.optionGroup}>
-										<option value="coverOptions">Couvertures</option>
-										<option value="publicationOptions">Publication</option>
+										{#each optionInputs as optionInput (optionInput.optionGroup)}
+											<option value={optionInput.optionGroup}>{optionInput.label}</option>
+										{/each}
+									</select>
+								</label>
+								<label>
+									Champ
+									<select bind:value={rule.input}>
+										{#each optionInputs as optionInput (optionInput.input)}
+											<option value={optionInput.input}>{optionInput.label}</option>
+										{/each}
 									</select>
 								</label>
 							{/if}
@@ -317,7 +342,7 @@
 
 {#snippet OptionEditor(
 	title: string,
-	group: 'projectTypes' | 'bookCategories' | 'coverOptions' | 'publicationOptions',
+	group: 'projectTypes' | 'bookCategories' | 'coverOptions' | 'publicationOptions' | 'isbnOptions',
 	withPrice = false
 )}
 	<section class="option-editor">

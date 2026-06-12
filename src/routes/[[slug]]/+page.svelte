@@ -9,6 +9,7 @@
 	import type {
 		BookCategory,
 		CoverOption,
+		IsbnOption,
 		PricingInput,
 		ProjectType,
 		PublicationOption,
@@ -43,6 +44,7 @@
 	let publicationOption = $state<PublicationOption>(
 		untrack(() => data.pricing.defaults.publicationOption)
 	);
+	let isbnOption = $state<IsbnOption>(untrack(() => data.pricing.defaults.isbnOption));
 	let hasLoadedPricingState = $state(false);
 
 	let pages = $derived(data.book.pages);
@@ -74,7 +76,8 @@
 		hasComplexIndex,
 		hasSummary,
 		tableCount,
-		publicationOption
+		publicationOption,
+		isbnOption
 	});
 	let pricingResult = $derived(calculatePricing(data.pricing, pricingInput));
 
@@ -123,6 +126,7 @@
 		if (typeof state.hasSummary === 'boolean') hasSummary = state.hasSummary;
 		if (typeof state.tableCount === 'number') tableCount = state.tableCount;
 		if (isPublicationOption(state.publicationOption)) publicationOption = state.publicationOption;
+		if (isIsbnOption(state.isbnOption)) isbnOption = state.isbnOption;
 	}
 
 	function isProjectType(value: unknown): value is ProjectType {
@@ -139,6 +143,10 @@
 
 	function isPublicationOption(value: unknown): value is PublicationOption {
 		return data.pricing.publicationOptions.some((option) => option.value === value);
+	}
+
+	function isIsbnOption(value: unknown): value is IsbnOption {
+		return data.pricing.isbnOptions.some((option) => option.value === value);
 	}
 
 	function isVolumeInput(value: unknown): value is VolumeInput {
@@ -598,6 +606,15 @@
 					<h3>Publication</h3>
 					<select bind:value={publicationOption}>
 						{#each data.pricing.publicationOptions as option (option.value)}
+							<option value={option.value}>{option.label}</option>
+						{/each}
+					</select>
+				</section>
+
+				<section class="pricing-group">
+					<h3>ISBN</h3>
+					<select bind:value={isbnOption}>
+						{#each data.pricing.isbnOptions as option (option.value)}
 							<option value={option.value}>{option.label}</option>
 						{/each}
 					</select>
