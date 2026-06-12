@@ -38,6 +38,10 @@
 			<span>Médias</span>
 			<strong>{data.mediaCount}</strong>
 		</section>
+		<section class="panel panel-inner">
+			<span>Projets nouveaux</span>
+			<strong>{data.newSubmissionCount}</strong>
+		</section>
 	</div>
 
 	{#if data.pages.length === 0}
@@ -59,6 +63,7 @@
 		</div>
 		<div class="quick-actions">
 			<a href={resolve('/admin/pages')}>Gérer les pages</a>
+			<a href={resolve('/admin/projects')}>Voir les projets</a>
 			<a href={resolve('/admin/tarifs')}>Modifier les tarifs</a>
 			<a href={resolve('/admin/media')}>Ajouter un média</a>
 			<a href={resolve('/admin/settings')}>Paramètres SEO</a>
@@ -88,7 +93,7 @@
 <style>
 	.stats {
 		display: grid;
-		grid-template-columns: repeat(4, minmax(0, 1fr));
+		grid-template-columns: repeat(5, minmax(0, 1fr));
 		gap: 1rem;
 	}
 
@@ -125,7 +130,7 @@
 
 	.quick-actions {
 		display: grid;
-		grid-template-columns: repeat(4, minmax(0, 1fr));
+		grid-template-columns: repeat(5, minmax(0, 1fr));
 	}
 
 	.quick-actions a {

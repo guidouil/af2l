@@ -7,6 +7,7 @@
 	const navItems = [
 		{ href: '/admin', label: 'Tableau de bord' },
 		{ href: '/admin/pages', label: 'Pages' },
+		{ href: '/admin/projects', label: 'Projets' },
 		{ href: '/admin/tarifs', label: 'Tarifs' },
 		{ href: '/admin/media', label: 'Médias' },
 		{ href: '/admin/settings', label: 'Paramètres' }

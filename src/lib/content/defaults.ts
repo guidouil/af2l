@@ -150,8 +150,7 @@ export const defaultPages: PublishedPage[] = [
 				],
 				intro:
 					'Les textes sont lus par sessions afin de répondre avec attention. Les projets de roman, poésie, récit, essai littéraire et livre illustré sont les bienvenus.'
-			},
-			{ id: 'manuscript-cta', type: 'cta', label: 'Demander une estimation', targetSlug: 'tarifs' }
+			}
 		]
 	},
 	{

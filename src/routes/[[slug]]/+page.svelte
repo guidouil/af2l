@@ -15,7 +15,7 @@
 		VolumeInput
 	} from '$lib/pricing/types';
 
-	let { data }: PageProps = $props();
+	let { data, form }: PageProps = $props();
 
 	const euroFormatter = new Intl.NumberFormat('fr-FR', {
 		style: 'currency',
@@ -48,6 +48,9 @@
 	let pages = $derived(data.book.pages);
 	let activePage = $derived(pages[data.initialPage] ?? pages[0]);
 	let activeSlug = $derived(activePage?.slug ?? '');
+	let isProjectSubmissionPage = $derived(
+		activeSlug === 'soumission' || activeSlug === 'manuscrits'
+	);
 	let navPages = $derived(
 		pages.filter((page) => page.showInNav && page.kind !== 'back_cover' && page.slug !== 'sommaire')
 	);
@@ -188,6 +191,12 @@
 		return label.trim().toLocaleLowerCase('fr-FR');
 	}
 
+	function isHiddenSubmissionEstimateCta(block: Extract<PageBlock, { type: 'cta' }>) {
+		return (
+			isProjectSubmissionPage && normalizeLabel(block.label).includes('demander une estimation')
+		);
+	}
+
 	function slugFromPath(pathname: string) {
 		const cleanPath = pathname.replace(/\/+$/, '');
 		const segment = cleanPath.split('/').filter(Boolean).at(-1) ?? '';
@@ -314,6 +323,65 @@
 					{#each activePage.blocks as block (block.id)}
 						{@render renderBlock(block)}
 					{/each}
+
+					{#if isProjectSubmissionPage}
+						<section class="project-submission-block" aria-labelledby="project-submission-title">
+							<div>
+								<p class="eyebrow">Transmission</p>
+								<h2 id="project-submission-title">Déposer vos fichiers</h2>
+								<p class="lead">
+									Envoyez les éléments nécessaires à l’étude de votre projet. Chaque fichier doit
+									peser moins de 10 Mo.
+								</p>
+							</div>
+
+							{#if form?.message}
+								<p class:success-message={form.success} class:error-message={!form.success}>
+									{form.message}
+								</p>
+							{/if}
+
+							<form method="POST" enctype="multipart/form-data" class="project-submission-form">
+								<div class="project-field-grid">
+									<label>
+										<span>Nom complet</span>
+										<input
+											name="fullName"
+											autocomplete="name"
+											required
+											value={form?.values?.fullName ?? ''}
+										/>
+									</label>
+
+									<label>
+										<span>Email</span>
+										<input
+											name="email"
+											type="email"
+											autocomplete="email"
+											required
+											value={form?.values?.email ?? ''}
+										/>
+									</label>
+								</div>
+
+								<label>
+									<span>Message optionnel</span>
+									<textarea name="message" rows="5" value={form?.values?.message ?? ''}></textarea>
+								</label>
+
+								<label class="file-field">
+									<span>Fichiers</span>
+									<input name="files" type="file" multiple required />
+									<small
+										>Un ou plusieurs fichiers, tous formats acceptés, 10 Mo maximum par fichier.</small
+									>
+								</label>
+
+								<button class="button-link" type="submit">Envoyer le projet</button>
+							</form>
+						</section>
+					{/if}
 				</div>
 			{/if}
 		</article>
@@ -553,7 +621,7 @@
 			<img src={blockImageSource(block)} alt={block.alt} />
 			{#if block.caption}<figcaption>{block.caption}</figcaption>{/if}
 		</figure>
-	{:else if block.type === 'cta'}
+	{:else if block.type === 'cta' && !isHiddenSubmissionEstimateCta(block)}
 		<a
 			class="button-link button-link--quiet"
 			href={resolve(block.targetSlug ? `/${block.targetSlug}` : '/')}
@@ -1038,7 +1106,8 @@
 	.contact-grid button,
 	.press-note,
 	.estimate-box,
-	.pricing-group {
+	.pricing-group,
+	.project-submission-block {
 		border: 1px solid var(--line);
 		background: color-mix(in srgb, var(--surface) 92%, transparent);
 		box-shadow: 0 1rem 2.2rem var(--paper-shadow);
@@ -1173,6 +1242,85 @@
 		font-size: 0.9rem;
 	}
 
+	.project-submission-block {
+		display: grid;
+		gap: 1rem;
+		max-width: 54rem;
+		padding: clamp(1rem, 2.5vw, 1.6rem);
+		box-shadow: none;
+	}
+
+	.project-submission-form {
+		display: grid;
+		gap: 1rem;
+	}
+
+	.project-field-grid {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 1rem;
+	}
+
+	.project-submission-form label {
+		display: grid;
+		gap: 0.42rem;
+		color: var(--muted);
+		font-size: 0.76rem;
+		font-weight: 800;
+		text-transform: uppercase;
+	}
+
+	.project-submission-form input,
+	.project-submission-form textarea {
+		width: 100%;
+		min-height: 2.75rem;
+		border: 1px solid var(--line);
+		border-radius: 0.35rem;
+		padding: 0.62rem 0.7rem;
+		background: var(--surface);
+		color: var(--ink);
+		font: inherit;
+		font-weight: 400;
+		text-transform: none;
+	}
+
+	.project-submission-form textarea {
+		min-height: 9rem;
+		resize: vertical;
+	}
+
+	.project-submission-form input[type='file'] {
+		min-height: 3rem;
+		padding: 0.55rem;
+		cursor: pointer;
+	}
+
+	.file-field small {
+		color: var(--muted);
+		font-size: 0.84rem;
+		font-weight: 500;
+		line-height: 1.35;
+		text-transform: none;
+	}
+
+	.success-message,
+	.error-message {
+		margin: 0;
+		border: 1px solid var(--line);
+		padding: 0.75rem 0.9rem;
+		line-height: 1.45;
+	}
+
+	.success-message {
+		background: color-mix(in srgb, var(--sage) 14%, var(--surface));
+		color: var(--sage-dark);
+	}
+
+	.error-message {
+		background: color-mix(in srgb, var(--clay) 12%, var(--surface));
+		color: var(--clay);
+	}
+
 	.pricing-inner {
 		max-width: none;
 	}
@@ -1304,6 +1452,8 @@
 
 	.pricing-group input:focus-visible,
 	.pricing-group select:focus-visible,
+	.project-submission-form input:focus-visible,
+	.project-submission-form textarea:focus-visible,
 	.button-link:focus-visible,
 	.header-cta:focus-visible,
 	#site-navigation a:focus-visible,
@@ -1486,7 +1636,8 @@
 		.book-grid,
 		.contact-grid,
 		.pricing-header,
-		.pricing-form {
+		.pricing-form,
+		.project-field-grid {
 			grid-template-columns: 1fr;
 		}
 

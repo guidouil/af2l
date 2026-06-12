@@ -99,3 +99,29 @@ export const mediaAssets = pgTable('media_assets', {
 	createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 	updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull()
 });
+
+export const projectSubmissions = pgTable('project_submissions', {
+	id: serial('id').primaryKey(),
+	fullName: text('full_name').notNull(),
+	email: text('email').notNull(),
+	message: text('message').notNull().default(''),
+	status: text('status')
+		.$type<'new' | 'in_progress' | 'done' | 'archived'>()
+		.notNull()
+		.default('new'),
+	createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+	updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull()
+});
+
+export const projectSubmissionFiles = pgTable('project_submission_files', {
+	id: serial('id').primaryKey(),
+	submissionId: integer('submission_id')
+		.notNull()
+		.references(() => projectSubmissions.id, { onDelete: 'cascade' }),
+	filename: text('filename').notNull(),
+	originalName: text('original_name').notNull(),
+	mimeType: text('mime_type').notNull(),
+	byteSize: integer('byte_size').notNull(),
+	storagePath: text('storage_path').notNull(),
+	createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull()
+});

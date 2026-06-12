@@ -3,13 +3,20 @@ import type { Actions, PageServerLoad } from './$types';
 import { getAdminPages, resetDefaultContent, seedDefaultContent } from '$lib/server/content';
 import { listMediaAssets } from '$lib/server/media';
 import { requireString } from '$lib/server/content/validation';
+import { listProjectSubmissions } from '$lib/server/project-submissions';
 
 export const load: PageServerLoad = async () => {
-	const [pages, media] = await Promise.all([getAdminPages(), listMediaAssets()]);
+	const [pages, media, submissions] = await Promise.all([
+		getAdminPages(),
+		listMediaAssets(),
+		listProjectSubmissions()
+	]);
 
 	return {
 		pages,
 		mediaCount: media.length,
+		submissionCount: submissions.length,
+		newSubmissionCount: submissions.filter((submission) => submission.status === 'new').length,
 		publishedCount: pages.filter((page) => page.published).length,
 		draftOnlyCount: pages.filter((page) => page.draft && !page.published).length
 	};
